@@ -89,6 +89,19 @@ type AuthorityRecord = {
   reason?: string;
 };
 
+type CarrierAlert = {
+  event_type?: string;
+  event_date?: string;
+  description?: string;
+};
+
+type OosOrder = {
+  order_date?: string;
+  reason?: string;
+  status?: string;
+  reinstatement_date?: string;
+};
+
 async function fetchCarrier(dot: string): Promise<Carrier | null> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/carriers?select=*&dot_number=eq.${dot}&limit=1`,
@@ -154,6 +167,24 @@ async function fetchAuthorityHistory(dot: string): Promise<AuthorityRecord[]> {
   return res.json();
 }
 
+async function fetchAlerts(dot: string): Promise<CarrierAlert[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/carrier_alerts?select=event_type,event_date,description&dot_number=eq.${dot}&order=event_date.desc&limit=20`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchOosOrders(dot: string): Promise<OosOrder[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/oos_orders?select=order_date,reason,status,reinstatement_date&dot_number=eq.${dot}&order=order_date.desc&limit=20`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
 function ScoreRow({ label, value, alert }: { label: string; value?: number | null; alert?: boolean | null }) {
   if (value === null || value === undefined) return null;
   const isAlert = alert ?? value >= ALERT_THRESHOLD;
@@ -184,7 +215,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export default async function CarrierDetailPage({ params }: { params: Promise<{ dot: string }> }) {
   const { dot } = await params;
-  const [carrier, sms, crashes, inspections, violations, insurance, authorityHistory] = await Promise.all([
+  const [carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders] = await Promise.all([
     fetchCarrier(dot),
     fetchSmsScores(dot),
     fetchCrashes(dot),
@@ -192,6 +223,8 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
     fetchViolations(dot),
     fetchInsurance(dot),
     fetchAuthorityHistory(dot),
+    fetchAlerts(dot),
+    fetchOosOrders(dot),
   ]);
 
   if (!carrier) notFound();
@@ -433,6 +466,72 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                       <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.effective_date ? new Date(ins.effective_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
                       <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{ins.cancellation_date ? new Date(ins.cancellation_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
                       <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* OOS Orders & Reinstatements */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>OOS Orders & Reinstatements</h2>
+          {oosOrders.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No OOS order records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Order Date", "Reason", "Status", "Reinstated"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {oosOrders.map((o, i) => {
+                    const isActive = o.status === "ACTIVE";
+                    const isReinstated = o.status === "REINSTATED" || !!o.reinstatement_date;
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isActive ? "#fef2f2" : "transparent" }}>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{o.order_date && o.order_date !== "1970-01-01" ? new Date(o.order_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151", maxWidth: "280px" }}>{o.reason ?? "—"}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: isActive ? "#fef2f2" : isReinstated ? "#f0fdf4" : "#f8fafc", color: isActive ? "#ef4444" : isReinstated ? "#22c55e" : "#64748b" }}>
+                            {o.status ?? "—"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 12px", color: "#22c55e" }}>{o.reinstatement_date ? new Date(o.reinstatement_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Revocation History */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Revocation History</h2>
+          {alerts.filter(a => a.event_type === "INVOLUNTARY_REVOCATION").length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No revocation records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Date", "Description"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {alerts.filter(a => a.event_type === "INVOLUNTARY_REVOCATION").map((a, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
+                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{a.event_date && a.event_date !== "1970-01-01" ? new Date(a.event_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{a.description ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
