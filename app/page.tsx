@@ -15,30 +15,20 @@ type Carrier = {
   dot_number: string;
   legal_name: string;
   dba_name?: string;
-  physical_state?: string;
-  carrier_operation?: string;
-  safety_rating?: string;
+  state?: string;
+  cargo_type?: string;
+  status?: string;
   unsafe_driving_percentile?: number;
   crash_indicator_percentile?: number;
   driver_fitness_percentile?: number;
   controlled_substances_percentile?: number;
   vehicle_maintenance_percentile?: number;
-  total_crashes?: number;
-  fatal_crashes?: number;
 };
 
 const ALERT_THRESHOLD = 75;
 
 function flattenSms(c: any): Carrier {
-  const sms = Array.isArray(c.sms_scores) ? c.sms_scores[0] : c.sms_scores;
-  return {
-    ...c,
-    unsafe_driving_percentile: sms?.unsafe_driving_percentile,
-    crash_indicator_percentile: sms?.crash_indicator_percentile,
-    driver_fitness_percentile: sms?.driver_fitness_percentile,
-    controlled_substances_percentile: sms?.controlled_substances_percentile,
-    vehicle_maintenance_percentile: sms?.vehicle_maintenance_percentile,
-  };
+  return c;
 }
 
 function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } {
@@ -50,9 +40,8 @@ function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: str
   ].filter((v) => v !== null && v !== undefined) as number[];
 
   const alertCount = scores.filter((s) => s >= ALERT_THRESHOLD).length;
-  const hasFatal = (carrier.fatal_crashes ?? 0) > 0;
 
-  if (alertCount >= 3 || hasFatal) return { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" };
+  if (alertCount >= 3) return { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" };
   if (alertCount >= 1) return { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" };
   return { label: "CLEAR", color: "#22c55e", bg: "#f0fdf4" };
 }
@@ -78,7 +67,7 @@ function ScoreBar({ label, value }: { label: string; value?: number }) {
 async function searchCarriers(query: string): Promise<Carrier[]> {
   const isNumber = /^\d+$/.test(query.trim());
   const q = query.trim();
-  const select = 'dot_number,legal_name,dba_name,physical_state,carrier_operation,safety_rating,total_crashes,fatal_crashes';
+  const select = 'dot_number,legal_name,dba_name,state,cargo_type,status';
 
   let url: string;
   if (isNumber) {
@@ -88,7 +77,8 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
   }
 
   const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) return [];
+  console.log('STATUS:', res.status, 'URL:', url);
+  if (!res.ok) { console.log('ERROR:', await res.text()); return []; }
   const data = await res.json();
 
   if (isNumber) return data.map(flattenSms);
@@ -175,13 +165,13 @@ export default function Home() {
                     {carrier.dba_name && <p style={{ fontSize: "13px", color: "#64748b" }}>DBA: {carrier.dba_name}</p>}
                     <div style={{ display: "flex", gap: "12px", marginTop: "6px", flexWrap: "wrap" }}>
                       <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>DOT #{carrier.dot_number}</span>
-                      {carrier.physical_state && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.physical_state}</span>}
-                      {carrier.carrier_operation && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.carrier_operation}</span>}
+                      {carrier.state && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.state}</span>}
+                      {carrier.cargo_type && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.cargo_type}</span>}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
-                    {carrier.safety_rating && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", fontFamily: "'DM Mono', monospace" }}>Rating: {carrier.safety_rating}</p>}
+                    {carrier.status && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", fontFamily: "'DM Mono', monospace" }}>Status: {carrier.status}</p>}
                   </div>
                 </div>
 
@@ -194,20 +184,6 @@ export default function Home() {
                   <ScoreBar label="CONTROLLED SUBSTANCES" value={carrier.controlled_substances_percentile} />
                 </div>
 
-                {(carrier.total_crashes ?? 0) > 0 && (
-                  <div style={{ marginTop: "16px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                    <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "10px 16px" }}>
-                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>TOTAL CRASHES</p>
-                      <p style={{ fontSize: "20px", fontWeight: 700, color: "#ef4444" }}>{carrier.total_crashes}</p>
-                    </div>
-                    {(carrier.fatal_crashes ?? 0) > 0 && (
-                      <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "10px 16px" }}>
-                        <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>FATAL</p>
-                        <p style={{ fontSize: "20px", fontWeight: 700, color: "#dc2626" }}>{carrier.fatal_crashes}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
