@@ -78,7 +78,7 @@ function ScoreBar({ label, value }: { label: string; value?: number }) {
 async function searchCarriers(query: string): Promise<Carrier[]> {
   const isNumber = /^\d+$/.test(query.trim());
   const q = query.trim();
-  const select = 'dot_number,legal_name,dba_name,physical_state,carrier_operation,safety_rating,total_crashes,fatal_crashes,sms_scores(unsafe_driving_percentile,crash_indicator_percentile,driver_fitness_percentile,controlled_substances_percentile,vehicle_maintenance_percentile)';
+  const select = 'dot_number,legal_name,dba_name,physical_state,carrier_operation,safety_rating,total_crashes,fatal_crashes';
 
   let url: string;
   if (isNumber) {
