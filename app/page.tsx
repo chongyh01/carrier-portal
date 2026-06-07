@@ -81,7 +81,7 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
 
   let carriers: any[] = data;
   if (!isNumber) {
-    const pattern = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
+    const pattern = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
     carriers = data.filter((c: any) => pattern.test(c.legal_name || "") || pattern.test(c.dba_name || ""));
     carriers.sort((a, b) => {
       const aName = (a.legal_name || "").toUpperCase();
