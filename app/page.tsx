@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 const SUPABASE_URL = 'https://linlnqrroavcutfpmkiz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxpbmxucXJyb2F2Y3V0ZnBta2l6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NDI5NTgsImV4cCI6MjA5NjIxODk1OH0.lb8CzjTWfzRYPwbm1FU-JCRiA4BPgyhCIRBq2h4t6Qk';
@@ -158,7 +159,7 @@ export default function Home() {
           {results.map((carrier) => {
             const risk = getRiskLevel(carrier);
             return (
-              <div key={carrier.dot_number} style={{ background: "white", borderRadius: "12px", padding: "24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <Link key={carrier.dot_number} href={`/carrier/${carrier.dot_number}`} style={{ textDecoration: "none", color: "inherit", display: "block", background: "white", borderRadius: "12px", padding: "24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", transition: "box-shadow 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
                   <div>
                     <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{carrier.legal_name || "—"}</h2>
@@ -184,7 +185,7 @@ export default function Home() {
                   <ScoreBar label="CONTROLLED SUBSTANCES" value={carrier.controlled_substances_percentile} />
                 </div>
 
-              </div>
+              </Link>
             );
           })}
         </div>
