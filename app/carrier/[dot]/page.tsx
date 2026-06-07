@@ -54,6 +54,41 @@ type Crash = {
   report_number?: string;
 };
 
+type Inspection = {
+  id: string;
+  inspection_date?: string;
+  state?: string;
+  level?: string;
+  oos_vehicles?: number;
+  oos_drivers?: number;
+  total_violations?: number;
+};
+
+type Violation = {
+  violation_code?: string;
+  description?: string;
+  oos_indicator?: string;
+  unit_type?: string;
+  basic_category?: string;
+};
+
+type Insurance = {
+  policy_type?: string;
+  insurer_name?: string;
+  policy_number?: string;
+  effective_date?: string;
+  cancellation_date?: string;
+  status?: string;
+};
+
+type AuthorityRecord = {
+  authority_type?: string;
+  status?: string;
+  effective_date?: string;
+  revocation_date?: string;
+  reason?: string;
+};
+
 async function fetchCarrier(dot: string): Promise<Carrier | null> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/carriers?select=*&dot_number=eq.${dot}&limit=1`,
@@ -77,6 +112,42 @@ async function fetchSmsScores(dot: string): Promise<SmsScores | null> {
 async function fetchCrashes(dot: string): Promise<Crash[]> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/crashes?select=crash_date,state,fatal,injury,towaway,report_number&dot_number=eq.${dot}&order=crash_date.desc&limit=50`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchInspections(dot: string): Promise<Inspection[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/inspections?select=id,inspection_date,state,level,oos_vehicles,oos_drivers,total_violations&dot_number=eq.${dot}&order=inspection_date.desc&limit=50`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchViolations(dot: string): Promise<Violation[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category&dot_number=eq.${dot}&limit=100`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchInsurance(dot: string): Promise<Insurance[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/insurance?select=policy_type,insurer_name,policy_number,effective_date,cancellation_date,status&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchAuthorityHistory(dot: string): Promise<AuthorityRecord[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/authority_history?select=authority_type,status,effective_date,revocation_date,reason&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -113,10 +184,14 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export default async function CarrierDetailPage({ params }: { params: Promise<{ dot: string }> }) {
   const { dot } = await params;
-  const [carrier, sms, crashes] = await Promise.all([
+  const [carrier, sms, crashes, inspections, violations, insurance, authorityHistory] = await Promise.all([
     fetchCarrier(dot),
     fetchSmsScores(dot),
     fetchCrashes(dot),
+    fetchInspections(dot),
+    fetchViolations(dot),
+    fetchInsurance(dot),
+    fetchAuthorityHistory(dot),
   ]);
 
   if (!carrier) notFound();
@@ -213,7 +288,7 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
         </div>
 
         {/* Crash History */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Crash History</h2>
 
           {totalCrashes === 0 ? (
@@ -263,6 +338,143 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                 </table>
               </div>
             </>
+          )}
+        </div>
+        {/* Inspection History */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Inspection History</h2>
+          {inspections.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No inspection records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspections.map((insp, i) => {
+                    const hasOos = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.inspection_date && insp.inspection_date !== "1970-01-01" ? new Date(insp.inspection_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.state ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{insp.level ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: (insp.oos_vehicles ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_vehicles ?? 0) > 0 ? 700 : 400 }}>{insp.oos_vehicles ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: (insp.oos_drivers ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_drivers ?? 0) > 0 ? 700 : 400 }}>{insp.oos_drivers ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Violations */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Violations</h2>
+          {violations.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No violation records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Code", "CFR Section", "Category", "Unit", "OOS"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {violations.map((v, i) => {
+                    const isOos = v.oos_indicator === "Y";
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isOos ? "#fef2f2" : "transparent" }}>
+                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.violation_code ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.description ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{v.basic_category ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.unit_type ?? "—"}</td>
+                        <td style={{ padding: "8px 12px", color: isOos ? "#ef4444" : "#22c55e", fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isOos ? "YES" : "NO"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Insurance History */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Insurance History</h2>
+          {insurance.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No insurance records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Type", "Insurer", "Policy #", "Effective", "Cancelled", "Status"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {insurance.map((ins, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_type ?? "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.insurer_name ?? "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_number ?? "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.effective_date ? new Date(ins.effective_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{ins.cancellation_date ? new Date(ins.cancellation_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Authority History */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Authority History</h2>
+          {authorityHistory.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No authority records found.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Type", "Status", "Effective", "Revoked", "Reason"].map((h) => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {authorityHistory.map((a, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{a.authority_type ?? "—"}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        {a.status ? (
+                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: a.status.toLowerCase().includes("active") ? "#f0fdf4" : "#f8fafc", color: a.status.toLowerCase().includes("active") ? "#22c55e" : "#64748b" }}>
+                            {a.status}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{a.effective_date ? new Date(a.effective_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{a.revocation_date ? new Date(a.revocation_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px" }}>{a.reason ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
