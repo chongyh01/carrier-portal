@@ -24,13 +24,11 @@ type Carrier = {
   driver_fitness_percentile?: number;
   controlled_substances_percentile?: number;
   vehicle_maintenance_percentile?: number;
+  total_crashes?: number;
+  fatal_crashes?: number;
 };
 
 const ALERT_THRESHOLD = 75;
-
-function flattenSms(c: any): Carrier {
-  return c;
-}
 
 function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } {
   const scores = [
@@ -40,10 +38,12 @@ function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: str
     carrier.vehicle_maintenance_percentile,
   ].filter((v) => v !== null && v !== undefined) as number[];
 
-  const alertCount = scores.filter((s) => s >= ALERT_THRESHOLD).length;
+  const smsAlerts = scores.filter((s) => s >= ALERT_THRESHOLD).length;
+  const hasFatal = (carrier.fatal_crashes ?? 0) > 0;
+  const hasCrashes = (carrier.total_crashes ?? 0) > 0;
 
-  if (alertCount >= 3) return { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" };
-  if (alertCount >= 1) return { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" };
+  if (smsAlerts >= 3 || hasFatal) return { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" };
+  if (smsAlerts >= 1 || hasCrashes) return { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" };
   return { label: "CLEAR", color: "#22c55e", bg: "#f0fdf4" };
 }
 
@@ -70,33 +70,74 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
   const q = query.trim();
   const select = 'dot_number,legal_name,dba_name,state,cargo_type,status';
 
-  let url: string;
-  if (isNumber) {
-    url = `${SUPABASE_URL}/rest/v1/carriers?select=${select}&dot_number=eq.${q}&limit=20`;
-  } else {
-    url = `${SUPABASE_URL}/rest/v1/carriers?select=${select}&or=(legal_name.ilike.*${encodeURIComponent(q)}*,dba_name.ilike.*${encodeURIComponent(q)}*)&limit=100`;
-  }
+  const carrierUrl = isNumber
+    ? `${SUPABASE_URL}/rest/v1/carriers?select=${select}&dot_number=eq.${q}&limit=20`
+    : `${SUPABASE_URL}/rest/v1/carriers?select=${select}&or=(legal_name.ilike.*${encodeURIComponent(q)}*,dba_name.ilike.*${encodeURIComponent(q)}*)&limit=100`;
 
-  const res = await fetch(url, { headers: HEADERS });
-  console.log('STATUS:', res.status, 'URL:', url);
+  const res = await fetch(carrierUrl, { headers: HEADERS });
+  console.log('STATUS:', res.status, 'URL:', carrierUrl);
   if (!res.ok) { console.log('ERROR:', await res.text()); return []; }
   const data = await res.json();
 
-  if (isNumber) return data.map(flattenSms);
+  let carriers: any[] = data;
+  if (!isNumber) {
+    const pattern = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
+    carriers = data.filter((c: any) => pattern.test(c.legal_name || "") || pattern.test(c.dba_name || ""));
+    carriers.sort((a, b) => {
+      const aName = (a.legal_name || "").toUpperCase();
+      const bName = (b.legal_name || "").toUpperCase();
+      const uq = q.toUpperCase();
+      return (aName.startsWith(uq) ? 0 : 1) - (bName.startsWith(uq) ? 0 : 1) || aName.localeCompare(bName);
+    });
+    carriers = carriers.slice(0, 30);
+  }
 
-  const pattern = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
-  const filtered = data
-    .filter((c: any) => pattern.test(c.legal_name || "") || pattern.test(c.dba_name || ""))
-    .map(flattenSms);
+  if (carriers.length === 0) return [];
 
-  filtered.sort((a: Carrier, b: Carrier) => {
-    const aName = (a.legal_name || "").toUpperCase();
-    const bName = (b.legal_name || "").toUpperCase();
-    const uq = q.toUpperCase();
-    return (aName.startsWith(uq) ? 0 : 1) - (bName.startsWith(uq) ? 0 : 1) || aName.localeCompare(bName);
+  const dots = carriers.map((c) => c.dot_number).join(',');
+
+  const [smsRes, crashRes] = await Promise.all([
+    fetch(
+      `${SUPABASE_URL}/rest/v1/sms_scores?select=dot_number,unsafe_driving,crash_indicator,driver_fitness,controlled_substances_alcohol,vehicle_maintenance&dot_number=in.(${dots})&order=score_date.desc`,
+      { headers: HEADERS }
+    ),
+    fetch(
+      `${SUPABASE_URL}/rest/v1/crashes?select=dot_number,fatal&dot_number=in.(${dots})`,
+      { headers: HEADERS }
+    ),
+  ]);
+
+  const smsMap = new Map<string, any>();
+  if (smsRes.ok) {
+    for (const s of await smsRes.json()) {
+      if (!smsMap.has(s.dot_number)) smsMap.set(s.dot_number, s);
+    }
+  }
+
+  const crashMap = new Map<string, { total: number; fatal: number }>();
+  if (crashRes.ok) {
+    for (const c of await crashRes.json()) {
+      const agg = crashMap.get(c.dot_number) ?? { total: 0, fatal: 0 };
+      agg.total += 1;
+      agg.fatal += c.fatal ?? 0;
+      crashMap.set(c.dot_number, agg);
+    }
+  }
+
+  return carriers.map((c) => {
+    const sms = smsMap.get(c.dot_number);
+    const crash = crashMap.get(c.dot_number);
+    return {
+      ...c,
+      unsafe_driving_percentile: sms?.unsafe_driving ?? undefined,
+      crash_indicator_percentile: sms?.crash_indicator ?? undefined,
+      driver_fitness_percentile: sms?.driver_fitness ?? undefined,
+      controlled_substances_percentile: sms?.controlled_substances_alcohol ?? undefined,
+      vehicle_maintenance_percentile: sms?.vehicle_maintenance ?? undefined,
+      total_crashes: crash?.total,
+      fatal_crashes: crash?.fatal,
+    };
   });
-
-  return filtered.slice(0, 30);
 }
 
 export default function Home() {
@@ -158,16 +199,30 @@ export default function Home() {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {results.map((carrier) => {
             const risk = getRiskLevel(carrier);
+            const hasScores = [
+              carrier.unsafe_driving_percentile,
+              carrier.crash_indicator_percentile,
+              carrier.driver_fitness_percentile,
+              carrier.vehicle_maintenance_percentile,
+              carrier.controlled_substances_percentile,
+            ].some((v) => v !== null && v !== undefined);
+
             return (
               <Link key={carrier.dot_number} href={`/carrier/${carrier.dot_number}`} style={{ textDecoration: "none", color: "inherit", display: "block", background: "white", borderRadius: "12px", padding: "24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", transition: "box-shadow 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
                   <div>
                     <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{carrier.legal_name || "—"}</h2>
                     {carrier.dba_name && <p style={{ fontSize: "13px", color: "#64748b" }}>DBA: {carrier.dba_name}</p>}
-                    <div style={{ display: "flex", gap: "12px", marginTop: "6px", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: "12px", marginTop: "6px", flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>DOT #{carrier.dot_number}</span>
                       {carrier.state && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.state}</span>}
                       {carrier.cargo_type && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.cargo_type}</span>}
+                      {(carrier.total_crashes ?? 0) > 0 && (
+                        <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: (carrier.fatal_crashes ?? 0) > 0 ? "#ef4444" : "#f97316", fontWeight: 600 }}>
+                          {carrier.total_crashes} crash{carrier.total_crashes !== 1 ? "es" : ""}
+                          {(carrier.fatal_crashes ?? 0) > 0 && ` · ${carrier.fatal_crashes} fatal`}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -176,15 +231,16 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
-                  <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "12px", letterSpacing: "1px" }}>SMS PERCENTILES (≥75 = ALERT)</p>
-                  <ScoreBar label="UNSAFE DRIVING" value={carrier.unsafe_driving_percentile} />
-                  <ScoreBar label="CRASH INDICATOR" value={carrier.crash_indicator_percentile} />
-                  <ScoreBar label="DRIVER FITNESS" value={carrier.driver_fitness_percentile} />
-                  <ScoreBar label="VEHICLE MAINTENANCE" value={carrier.vehicle_maintenance_percentile} />
-                  <ScoreBar label="CONTROLLED SUBSTANCES" value={carrier.controlled_substances_percentile} />
-                </div>
-
+                {hasScores && (
+                  <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "12px", letterSpacing: "1px" }}>SMS PERCENTILES (≥75 = ALERT)</p>
+                    <ScoreBar label="UNSAFE DRIVING" value={carrier.unsafe_driving_percentile} />
+                    <ScoreBar label="CRASH INDICATOR" value={carrier.crash_indicator_percentile} />
+                    <ScoreBar label="DRIVER FITNESS" value={carrier.driver_fitness_percentile} />
+                    <ScoreBar label="VEHICLE MAINTENANCE" value={carrier.vehicle_maintenance_percentile} />
+                    <ScoreBar label="CONTROLLED SUBSTANCES" value={carrier.controlled_substances_percentile} />
+                  </div>
+                )}
               </Link>
             );
           })}
