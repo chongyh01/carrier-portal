@@ -82,9 +82,9 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
 
   let url: string;
   if (isNumber) {
-    url = `${SUPABASE_URL}/rest/v1/carriers?select=${encodeURIComponent(select)}&dot_number=eq.${q}&limit=20`;
+    url = `${SUPABASE_URL}/rest/v1/carriers?select=${select}&dot_number=eq.${q}&limit=20`;
   } else {
-    url = `${SUPABASE_URL}/rest/v1/carriers?select=${encodeURIComponent(select)}&or=(legal_name.ilike.*${encodeURIComponent(q)}*,dba_name.ilike.*${encodeURIComponent(q)}*)&limit=100`;
+    url = `${SUPABASE_URL}/rest/v1/carriers?select=${select}&or=(legal_name.ilike.*${encodeURIComponent(q)}*,dba_name.ilike.*${encodeURIComponent(q)}*)&limit=100`;
   }
 
   const res = await fetch(url, { headers: HEADERS });
