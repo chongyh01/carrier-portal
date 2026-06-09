@@ -185,6 +185,13 @@ async function fetchOosOrders(dot: string): Promise<OosOrder[]> {
   return res.json();
 }
 
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(d?: string | null): string {
+  if (!d || d.startsWith("1970-01-01")) return "—";
+  const dt = new Date(d);
+  return `${String(dt.getUTCDate()).padStart(2, "0")} ${MONTHS[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+}
+
 function ScoreRow({ label, value, alert }: { label: string; value?: number | null; alert?: boolean | null }) {
   if (value === null || value === undefined) return null;
   const isAlert = alert ?? value >= ALERT_THRESHOLD;
@@ -300,7 +307,7 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
             <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a" }}>SMS Safety Scores</h2>
             {sms?.score_date && (
               <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-                {new Date(sms.score_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                {fmtDate(sms.score_date)}
               </span>
             )}
           </div>
@@ -359,7 +366,7 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                   <tbody>
                     {crashes.map((c, i) => (
                       <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: c.fatal > 0 ? "#fef2f2" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{c.crash_date && c.crash_date !== "1970-01-01" ? new Date(c.crash_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(c.crash_date)}</td>
                         <td style={{ padding: "8px 12px", color: "#374151" }}>{c.state ?? "—"}</td>
                         <td style={{ padding: "8px 12px", color: c.fatal > 0 ? "#ef4444" : "#374151", fontWeight: c.fatal > 0 ? 700 : 400 }}>{c.fatal}</td>
                         <td style={{ padding: "8px 12px", color: c.injury > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
@@ -393,7 +400,7 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                     const hasOos = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.inspection_date && insp.inspection_date !== "1970-01-01" ? new Date(insp.inspection_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(insp.inspection_date)}</td>
                         <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.state ?? "—"}</td>
                         <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{insp.level ?? "—"}</td>
                         <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
@@ -463,8 +470,8 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                       <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_type ?? "—"}</td>
                       <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.insurer_name ?? "—"}</td>
                       <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_number ?? "—"}</td>
-                      <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.effective_date ? new Date(ins.effective_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
-                      <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{ins.cancellation_date ? new Date(ins.cancellation_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(ins.effective_date)}</td>
+                      <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(ins.cancellation_date)}</td>
                       <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
                     </tr>
                   ))}
@@ -495,14 +502,14 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                     const isReinstated = o.status === "REINSTATED" || !!o.reinstatement_date;
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isActive ? "#fef2f2" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{o.order_date && o.order_date !== "1970-01-01" ? new Date(o.order_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(o.order_date)}</td>
                         <td style={{ padding: "8px 12px", color: "#374151", maxWidth: "280px" }}>{o.reason ?? "—"}</td>
                         <td style={{ padding: "8px 12px" }}>
                           <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: isActive ? "#fef2f2" : isReinstated ? "#f0fdf4" : "#f8fafc", color: isActive ? "#ef4444" : isReinstated ? "#22c55e" : "#64748b" }}>
                             {o.status ?? "—"}
                           </span>
                         </td>
-                        <td style={{ padding: "8px 12px", color: "#22c55e" }}>{o.reinstatement_date ? new Date(o.reinstatement_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: "#22c55e" }}>{fmtDate(o.reinstatement_date)}</td>
                       </tr>
                     );
                   })}
@@ -530,7 +537,7 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                 <tbody>
                   {alerts.filter(a => a.event_type === "INVOLUNTARY_REVOCATION").map((a, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
-                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{a.event_date && a.event_date !== "1970-01-01" ? new Date(a.event_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(a.event_date)}</td>
                       <td style={{ padding: "8px 12px", color: "#374151" }}>{a.description ?? "—"}</td>
                     </tr>
                   ))}
@@ -566,8 +573,8 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
                           </span>
                         ) : "—"}
                       </td>
-                      <td style={{ padding: "8px 12px", color: "#374151" }}>{a.effective_date ? new Date(a.effective_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
-                      <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{a.revocation_date ? new Date(a.revocation_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(a.effective_date)}</td>
+                      <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(a.revocation_date)}</td>
                       <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px" }}>{a.reason ?? "—"}</td>
                     </tr>
                   ))}
