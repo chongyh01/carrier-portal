@@ -213,18 +213,25 @@ function isNonCompliant(i: Inspection): boolean {
 }
 
 function ScoreRow({ label, value, alert }: { label: string; value?: number | null; alert?: boolean | null }) {
-  if (value === null || value === undefined) return null;
-  const isAlert = alert ?? value >= ALERT_THRESHOLD;
+  // FMCSA stores 0 for unscored BASICs (insufficient data) — treat as not available
+  const hasScore = value !== null && value !== undefined && value > 0;
+  const isAlert = hasScore && (alert ?? value! >= ALERT_THRESHOLD);
   return (
     <div style={{ marginBottom: "12px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
         <span style={{ fontSize: "12px", color: "#6b7280", fontFamily: "'DM Mono', monospace" }}>{label}</span>
-        <span style={{ fontSize: "12px", fontWeight: 700, color: isAlert ? "#ef4444" : "#374151", fontFamily: "'DM Mono', monospace" }}>
-          {value}th {isAlert && "⚠"}
-        </span>
+        {hasScore ? (
+          <span style={{ fontSize: "12px", fontWeight: 700, color: isAlert ? "#ef4444" : "#374151", fontFamily: "'DM Mono', monospace" }}>
+            {value}th {isAlert && "⚠"}
+          </span>
+        ) : (
+          <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontStyle: "italic" }}>Not Available</span>
+        )}
       </div>
       <div style={{ height: "6px", background: "#f3f4f6", borderRadius: "3px", overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${value}%`, background: isAlert ? "#ef4444" : value >= 50 ? "#f97316" : "#22c55e", borderRadius: "3px" }} />
+        {hasScore && (
+          <div style={{ height: "100%", width: `${value}%`, background: isAlert ? "#ef4444" : value! >= 50 ? "#f97316" : "#22c55e", borderRadius: "3px" }} />
+        )}
       </div>
     </div>
   );
@@ -317,10 +324,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     sms?.vehicle_maintenance_alert,
   ].filter(Boolean).length;
 
-  const hasSmsData = sms && (
-    sms.unsafe_driving !== null && sms.unsafe_driving !== undefined ||
-    sms.crash_indicator !== null && sms.crash_indicator !== undefined
-  );
+  const hasSmsData = sms !== null;
 
   const risk = smsAlerts >= 3 || fatalCrashes > 0
     ? { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" }
