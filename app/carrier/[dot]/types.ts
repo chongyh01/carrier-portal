@@ -16,6 +16,7 @@ export type Carrier = {
   safety_rating_date?: string;
   review_type?: string;
   review_date?: string;
+  updated_at?: string;
 };
 
 export type SmsScores = {
@@ -34,6 +35,7 @@ export type SmsScores = {
   hazardous_materials_alert?: boolean;
   crash_indicator_alert?: boolean;
   score_date?: string;
+  fetched_at?: string;
 };
 
 export type Crash = {
@@ -43,6 +45,7 @@ export type Crash = {
   injury: number;
   towaway: number;
   report_number?: string;
+  imported_at?: string;
 };
 
 export type Inspection = {
@@ -53,6 +56,7 @@ export type Inspection = {
   oos_vehicles?: number;
   oos_drivers?: number;
   total_violations?: number;
+  imported_at?: string;
 };
 
 export type Violation = {
@@ -61,6 +65,7 @@ export type Violation = {
   oos_indicator?: string;
   unit_type?: string;
   basic_category?: string;
+  imported_at?: string;
 };
 
 export type Insurance = {
@@ -70,6 +75,7 @@ export type Insurance = {
   effective_date?: string;
   cancellation_date?: string;
   status?: string;
+  imported_at?: string;
 };
 
 export type AuthorityRecord = {
@@ -78,12 +84,14 @@ export type AuthorityRecord = {
   effective_date?: string;
   revocation_date?: string;
   reason?: string;
+  imported_at?: string;
 };
 
 export type CarrierAlert = {
   event_type?: string;
   event_date?: string;
   description?: string;
+  detected_at?: string;
 };
 
 export type OosOrder = {
@@ -91,4 +99,5 @@ export type OosOrder = {
   reason?: string;
   status?: string;
   reinstatement_date?: string;
+  detected_at?: string;
 };

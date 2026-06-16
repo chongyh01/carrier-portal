@@ -42,7 +42,7 @@ async function fetchSmsScores(dot: string): Promise<SmsScores | null> {
 
 async function fetchCrashes(dot: string): Promise<Crash[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/crashes?select=crash_date,state,fatal,injury,towaway,report_number&dot_number=eq.${dot}&order=crash_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/crashes?select=crash_date,state,fatal,injury,towaway,report_number,imported_at&dot_number=eq.${dot}&order=crash_date.desc&limit=50`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -51,7 +51,7 @@ async function fetchCrashes(dot: string): Promise<Crash[]> {
 
 async function fetchInspections(dot: string): Promise<Inspection[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/inspections?select=id,inspection_date,state,level,oos_vehicles,oos_drivers,total_violations&dot_number=eq.${dot}&order=inspection_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/inspections?select=id,inspection_date,state,level,oos_vehicles,oos_drivers,total_violations,imported_at&dot_number=eq.${dot}&order=inspection_date.desc&limit=50`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -60,7 +60,7 @@ async function fetchInspections(dot: string): Promise<Inspection[]> {
 
 async function fetchViolations(dot: string): Promise<Violation[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category&dot_number=eq.${dot}&limit=100`,
+    `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at&dot_number=eq.${dot}&limit=100`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -69,7 +69,7 @@ async function fetchViolations(dot: string): Promise<Violation[]> {
 
 async function fetchInsurance(dot: string): Promise<Insurance[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/insurance?select=policy_type,insurer_name,policy_number,effective_date,cancellation_date,status&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/insurance?select=policy_type,insurer_name,policy_number,effective_date,cancellation_date,status,imported_at&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -78,7 +78,7 @@ async function fetchInsurance(dot: string): Promise<Insurance[]> {
 
 async function fetchAuthorityHistory(dot: string): Promise<AuthorityRecord[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/authority_history?select=authority_type,status,effective_date,revocation_date,reason&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/authority_history?select=authority_type,status,effective_date,revocation_date,reason,imported_at&dot_number=eq.${dot}&order=effective_date.desc&limit=50`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -87,7 +87,7 @@ async function fetchAuthorityHistory(dot: string): Promise<AuthorityRecord[]> {
 
 async function fetchAlerts(dot: string): Promise<CarrierAlert[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/carrier_alerts?select=event_type,event_date,description&dot_number=eq.${dot}&order=event_date.desc&limit=20`,
+    `${SUPABASE_URL}/rest/v1/carrier_alerts?select=event_type,event_date,description,detected_at&dot_number=eq.${dot}&order=event_date.desc&limit=20`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -96,7 +96,7 @@ async function fetchAlerts(dot: string): Promise<CarrierAlert[]> {
 
 async function fetchOosOrders(dot: string): Promise<OosOrder[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/oos_orders?select=order_date,reason,status,reinstatement_date&dot_number=eq.${dot}&order=order_date.desc&limit=20`,
+    `${SUPABASE_URL}/rest/v1/oos_orders?select=order_date,reason,status,reinstatement_date,detected_at&dot_number=eq.${dot}&order=order_date.desc&limit=20`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];

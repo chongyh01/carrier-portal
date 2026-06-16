@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\('playwright'\\)\")",
+      "Bash(kill %1)",
+      "Bash(vercel --prod)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/carrier/572791)",
+      "Bash(curl -s http://localhost:3000/carrier/572791)",
+      "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"detail \\(with crashes\\): %{http_code}\\\\n\" http://localhost:3000/carrier/263690)",
+      "Bash(curl -s http://localhost:3000/carrier/263690)",
+      "Bash(curl -s http://localhost:3000/carrier/1362673)",
+      "Bash(curl -s http://localhost:3000/carrier/1341047)",
+      "PowerShell(node \"C:\\\\Users\\\\chong\\\\OneDrive\\\\Documents\\\\Desktop\\\\MISC PROJECT\\\\US DIRECTORY\\\\CARRIER INTELLIGENT REPORT\\\\5 Jun 26 - CARRIER PORTAL\\\\carrier-portal\\\\test-regex.js\")",
+      "PowerShell(Invoke-RestMethod \"https://data.transportation.gov/resource/p2mt-9ige.csv?`$limit=1\")"
+    ]
+  }
+}
