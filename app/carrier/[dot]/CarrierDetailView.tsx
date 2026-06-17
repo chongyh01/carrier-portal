@@ -169,6 +169,9 @@ function isInsuranceActiveOn(ins: Insurance, accidentDate: string): boolean {
 }
 
 function isAuthorityActiveOn(a: AuthorityRecord, accidentDate: string): boolean {
+  // INVOL REV and REJECTED records are not active grant periods
+  const s = (a.status ?? "").toUpperCase();
+  if (s.includes("REVOC") || s === "REJECTED") return false;
   const eff = dateOnly(a.effective_date);
   const rev = dateOnly(a.revocation_date);
   if (!eff || eff > accidentDate) return false;
@@ -693,8 +696,30 @@ function deriveAuthorityBasis(
   if (authorityHistory.length === 0)
     return { active: false, basis: "No operating authority records found for this carrier." };
 
+  // Check for an active involuntary revocation window at the accident date.
+  // INVOL REV rows: effective_date = when revocation started,
+  // revocation_date = when it was discontinued (reinstated).
+  // If eff <= accidentDate AND (rev is null OR rev > accidentDate) → active revocation.
+  const activeInvolRev = authorityHistory.find(a => {
+    if (!(a.status ?? "").toUpperCase().includes("INVOLUNTARY")) return false;
+    const eff = dateOnly(a.effective_date);
+    const rev = dateOnly(a.revocation_date);
+    if (!eff || eff > accidentDate) return false;
+    return !rev || rev > accidentDate;
+  });
+
+  if (activeInvolRev) {
+    return {
+      active: false,
+      basis: `Involuntary revocation in effect from ${fmtDate(activeInvolRev.effective_date)}. No reinstatement found before ${fmtDate(accidentDate)}.`,
+    };
+  }
+
+  // No active INVOL REV — look for a valid GRANTED or REINSTATED record.
   const candidates = authorityHistory
     .filter(a => {
+      const s = (a.status ?? "").toUpperCase();
+      if (!s.includes("GRANTED") && !s.includes("REINSTATED")) return false;
       const eff = dateOnly(a.effective_date);
       return eff !== null && eff <= accidentDate;
     })
