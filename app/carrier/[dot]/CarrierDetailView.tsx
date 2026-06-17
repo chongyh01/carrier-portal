@@ -32,7 +32,6 @@ function mostRecent(dates: (string | undefined | null)[]): string | undefined {
   return dates.filter((d): d is string => !!d).sort().pop();
 }
 
-// Step 1 — US state abbreviation → full name
 const STATE_NAMES: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
   CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
@@ -51,62 +50,38 @@ function stateName(code?: string | null): string {
   return STATE_NAMES[code.toUpperCase()] ?? code;
 }
 
-// Step 3 — FMCSA INSP_VIOLATION_CATEGORY_ID → plain English
-// Source: MCMIS Vehicle Inspection Data Set Dictionary, Rev 5, 2025-10-15
-const VIOLATION_CATEGORY: Record<number, string> = {
-  1: "Medical Certificate",
-  2: "False Log Book",
-  3: "Log Book / Hours of Service",
-  4: "10/15 Hours",
-  5: "15/20 Hours",
-  6: "60/70/80 Hours",
-  7: "All Other Hours of Service",
-  8: "Disqualified Driver",
-  9: "Drugs",
-  10: "Alcohol",
-  11: "Seat Belt",
-  12: "Traffic Enforcement",
-  13: "Radar Detector",
-  14: "All Other Driver Violations",
-  15: "Brakes — Out of Adjustment",
-  16: "Brakes — All Other",
-  17: "Coupling Devices",
-  18: "Fuel Systems",
-  19: "Frames",
-  20: "Lighting",
-  21: "Steering Mechanism",
-  22: "Suspension",
-  23: "Tires",
-  24: "Wheels / Studs / Clamps",
-  25: "Load Securement",
-  26: "Windshield",
-  27: "Exhaust Discharge",
-  28: "Emergency Equipment",
-  29: "Periodic Inspection",
-  30: "All Other Vehicle Defects",
-  31: "Hazmat — Shipping Papers",
-  32: "Hazmat — Improper Placarding",
-  33: "Hazmat — Improperly Marked Shipment",
-  34: "Hazmat — Improper Blocking & Bracing",
-  35: "Hazmat — No Cargo Tank Retest",
-  36: "Hazmat — No Remote Shutoff",
-  37: "Hazmat — Non-Specification Container",
-  38: "Hazmat — Emergency Response",
-  39: "Hazmat — All Other",
-  40: "Failure to Obey Traffic Control Device",
-  41: "Following Too Close",
-  42: "Improper Lane Change",
-  43: "Improper Passing",
-  44: "Reckless Driving",
-  45: "Speeding",
-  46: "Improper Turns",
-  47: "Size and Weight",
-  48: "Failure to Yield Right of Way",
-  49: "State/Local Hours of Service",
-  99: "Unknown",
+const INSPECTION_LEVELS: Record<number, string> = {
+  1: "Full (Driver + Vehicle)",
+  2: "Walk-Around (Driver + Vehicle)",
+  3: "Driver Only",
+  4: "Special",
+  5: "Vehicle Only",
+  6: "Enhanced NAS",
+  7: "Cargo / Large Vehicle",
 };
 
-// Step 3 — CFR section number → plain English (common Part 390–396 codes)
+const VIOLATION_CATEGORY: Record<number, string> = {
+  1: "Medical Certificate", 2: "False Log Book", 3: "Log Book / Hours of Service",
+  4: "10/15 Hours", 5: "15/20 Hours", 6: "60/70/80 Hours",
+  7: "All Other Hours of Service", 8: "Disqualified Driver", 9: "Drugs",
+  10: "Alcohol", 11: "Seat Belt", 12: "Traffic Enforcement", 13: "Radar Detector",
+  14: "All Other Driver Violations", 15: "Brakes — Out of Adjustment",
+  16: "Brakes — All Other", 17: "Coupling Devices", 18: "Fuel Systems",
+  19: "Frames", 20: "Lighting", 21: "Steering Mechanism", 22: "Suspension",
+  23: "Tires", 24: "Wheels / Studs / Clamps", 25: "Load Securement",
+  26: "Windshield", 27: "Exhaust Discharge", 28: "Emergency Equipment",
+  29: "Periodic Inspection", 30: "All Other Vehicle Defects",
+  31: "Hazmat — Shipping Papers", 32: "Hazmat — Improper Placarding",
+  33: "Hazmat — Improperly Marked Shipment", 34: "Hazmat — Improper Blocking & Bracing",
+  35: "Hazmat — No Cargo Tank Retest", 36: "Hazmat — No Remote Shutoff",
+  37: "Hazmat — Non-Specification Container", 38: "Hazmat — Emergency Response",
+  39: "Hazmat — All Other", 40: "Failure to Obey Traffic Control Device",
+  41: "Following Too Close", 42: "Improper Lane Change", 43: "Improper Passing",
+  44: "Reckless Driving", 45: "Speeding", 46: "Improper Turns",
+  47: "Size and Weight", 48: "Failure to Yield Right of Way",
+  49: "State/Local Hours of Service", 99: "Unknown",
+};
+
 const CFR_DESCRIPTIONS: Record<string, string> = {
   "390.5": "Definitions", "390.11": "General application",
   "390.15": "Assistance in investigations", "390.17": "State and local laws",
@@ -131,8 +106,7 @@ const CFR_DESCRIPTIONS: Record<string, string> = {
   "393.17": "Lamps/reflectors — combination vehicles", "393.19": "Turn signaling system",
   "393.22": "Combination lighting devices", "393.24": "Headlighting system",
   "393.25": "Other lamp requirements", "393.26": "Reflector requirements",
-  "393.28": "Wiring systems", "393.29": "Protected wiring",
-  "393.30": "Battery installation",
+  "393.28": "Wiring systems", "393.29": "Protected wiring", "393.30": "Battery installation",
   "393.40": "Required brake systems", "393.41": "Parking brake system",
   "393.42": "Brakes required on all wheels", "393.43": "Breakaway and emergency braking",
   "393.44": "Front brake line protection", "393.45": "Brake tubing and hose",
@@ -175,16 +149,11 @@ function cfrDescription(raw?: string | null): string | null {
   return m ? (CFR_DESCRIPTIONS[m[1]] ?? null) : null;
 }
 
-// Step 3 — Insurance form code → plain English (FMCSA dataset spec)
 const INSURANCE_FORM_CODES: Record<string, string> = {
-  "34": "Cargo Insurance",
-  "82": "Public Liability Insurance (BI&PD)",
-  "83": "Cargo Insurance",
-  "84": "Property Broker's Surety Bond",
-  "85": "Property Broker's Trust Fund",
-  "85C": "BMC Trust Fund Cancellation",
-  "91": "Public Liability Insurance",
-  "91X": "Public Liability Insurance",
+  "34": "Cargo Insurance", "82": "Public Liability Insurance (BI&PD)",
+  "83": "Cargo Insurance", "84": "Property Broker's Surety Bond",
+  "85": "Property Broker's Trust Fund", "85C": "BMC Trust Fund Cancellation",
+  "91": "Public Liability Insurance", "91X": "Public Liability Insurance",
 };
 function insuranceTypeLabel(code?: string | null): string {
   if (!code) return "—";
@@ -207,13 +176,11 @@ function isAuthorityActiveOn(a: AuthorityRecord, accidentDate: string): boolean 
   return true;
 }
 
-// Step 4 — returns true if inspection had a violation or OOS event (not a clean pass)
 function isNonCompliant(i: Inspection): boolean {
   return (i.total_violations ?? 0) > 0 || (i.oos_vehicles ?? 0) > 0 || (i.oos_drivers ?? 0) > 0;
 }
 
 function ScoreRow({ label, value, alert }: { label: string; value?: number | null; alert?: boolean | null }) {
-  // FMCSA stores 0 for unscored BASICs (insufficient data) — treat as not available
   const hasScore = value !== null && value !== undefined && value > 0;
   const isAlert = hasScore && (alert ?? value! >= ALERT_THRESHOLD);
   return (
@@ -274,6 +241,408 @@ function SectionHeader({ title, source, lastUpdated, right }: { title: string; s
   );
 }
 
+// suppress unused warning — SectionHeader kept for potential future use within buckets
+void SectionHeader;
+void mostRecent;
+void YesNoBadge;
+
+// ─── inRange ────────────────────────────────────────────────
+function inRange(dateStr: string | null | undefined, start: string | null, end: string | null): boolean {
+  if (!dateStr || dateStr.startsWith("1970-01-01")) return false;
+  const d = dateStr.slice(0, 10);
+  if (start && d < start) return false;
+  if (end && d > end) return false;
+  return true;
+}
+
+// ─── Sub-section header ──────────────────────────────────────
+function SubHeader({ title }: { title: string }) {
+  return (
+    <h3 style={{
+      fontSize: "14px", fontWeight: 600, color: "#0f172a",
+      borderBottom: "1px solid #f1f5f9", paddingBottom: "8px",
+      marginTop: "24px", marginBottom: "12px",
+    }}>
+      {title}
+    </h3>
+  );
+}
+
+// ─── TimeBucketSection ───────────────────────────────────────
+type TimeBucketProps = {
+  label: string;
+  sub: string;
+  highlight?: boolean;
+  bucketStart: string | null;
+  bucketEnd: string | null;
+  crashes: Crash[];
+  violations: Violation[];
+  insurance: Insurance[];
+  oosOrders: OosOrder[];
+  revocations: CarrierAlert[];
+  authorityHistory: AuthorityRecord[];
+  inspections: Inspection[];
+  carrier: Carrier;
+  sms: SmsScores | null;
+};
+
+function TimeBucketSection({
+  label, sub, highlight = false,
+  bucketStart, bucketEnd,
+  crashes, violations, insurance, oosOrders, revocations, authorityHistory, inspections,
+  carrier, sms,
+}: TimeBucketProps) {
+  const s = bucketStart;
+  const e = bucketEnd;
+
+  const bucketCrashes      = crashes.filter(c   => inRange(c.crash_date,      s, e));
+  const bucketViolations   = violations.filter(v  => inRange((v as Violation & { inspection_date?: string }).inspection_date, s, e));
+  const bucketInsurance    = insurance.filter(ins => inRange(ins.effective_date, s, e));
+  const bucketOos          = oosOrders.filter(o   => inRange(o.order_date,      s, e));
+  const bucketRevocations  = revocations.filter(r  => inRange(r.event_date,     s, e));
+  const bucketAuthority    = authorityHistory.filter(a => inRange(a.effective_date, s, e));
+  const bucketInspections  = inspections.filter(i  => inRange(i.inspection_date, s, e)).filter(isNonCompliant);
+
+  const ratingDate     = carrier.safety_rating_date || carrier.review_date;
+  const ratingInBucket = inRange(ratingDate, s, e);
+  const smsInBucket    = sms ? inRange(sms.score_date, s, e) : false;
+
+  const isEmpty =
+    bucketCrashes.length === 0 && bucketViolations.length === 0 &&
+    bucketInsurance.length === 0 && bucketOos.length === 0 &&
+    bucketRevocations.length === 0 && bucketAuthority.length === 0 &&
+    bucketInspections.length === 0 && !ratingInBucket && !smsInBucket;
+
+  const fatalCount  = bucketCrashes.reduce((sum, c) => sum + (c.fatal  ?? 0), 0);
+  const injuryCount = bucketCrashes.reduce((sum, c) => sum + (c.injury ?? 0), 0);
+
+  const TH = ({ cols }: { cols: string[] }) => (
+    <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+      {cols.map(h => (
+        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+      ))}
+    </tr>
+  );
+
+  return (
+    <div style={{
+      background: "white", borderRadius: "12px",
+      border: highlight ? "1px solid #fde68a" : "1px solid #e2e8f0",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "24px", overflow: "hidden",
+    }}>
+      <div style={{
+        background: highlight ? "#fffbeb" : "#f8fafc",
+        borderBottom: highlight ? "1px solid #fde68a" : "1px solid #e2e8f0",
+        padding: "20px 28px",
+      }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "16px", flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>{label}</h2>
+          <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{sub}</span>
+        </div>
+      </div>
+
+      <div style={{ padding: "4px 28px 28px" }}>
+        {isEmpty ? (
+          <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "20px" }}>
+            No records in this period.
+          </p>
+        ) : (
+          <>
+            {/* Crash History */}
+            {bucketCrashes.length > 0 && (
+              <>
+                <SubHeader title="Crash History" />
+                <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
+                  <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "10px 16px" }}>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>TOTAL</p>
+                    <p style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a" }}>{bucketCrashes.length}</p>
+                  </div>
+                  {fatalCount > 0 && (
+                    <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "10px 16px" }}>
+                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>FATAL</p>
+                      <p style={{ fontSize: "22px", fontWeight: 700, color: "#ef4444" }}>{fatalCount}</p>
+                    </div>
+                  )}
+                  {injuryCount > 0 && (
+                    <div style={{ background: "#fff7ed", borderRadius: "8px", padding: "10px 16px" }}>
+                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>INJURY</p>
+                      <p style={{ fontSize: "22px", fontWeight: 700, color: "#f97316" }}>{injuryCount}</p>
+                    </div>
+                  )}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Date", "State", "Fatal", "Injury", "Towaway", "Report #"]} /></thead>
+                    <tbody>
+                      {bucketCrashes.map((c, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: (c.fatal ?? 0) > 0 ? "#fef2f2" : "transparent" }}>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(c.crash_date)}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(c.state)}</td>
+                          <td style={{ padding: "8px 12px", color: (c.fatal ?? 0) > 0 ? "#ef4444" : "#374151", fontWeight: (c.fatal ?? 0) > 0 ? 700 : 400 }}>{c.fatal}</td>
+                          <td style={{ padding: "8px 12px", color: (c.injury ?? 0) > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{c.towaway}</td>
+                          <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{c.report_number ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Violations */}
+            {bucketViolations.length > 0 && (
+              <>
+                <SubHeader title="Violations" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Date", "Category", "CFR Section", "Unit", "OOS"]} /></thead>
+                    <tbody>
+                      {bucketViolations.map((v, i) => {
+                        const vx = v as Violation & { inspection_date?: string };
+                        const isOos = v.oos_indicator === "Y";
+                        const catCode = v.violation_code ? parseInt(v.violation_code) : null;
+                        const catName = catCode !== null && !isNaN(catCode) ? (VIOLATION_CATEGORY[catCode] ?? `Code ${catCode}`) : null;
+                        const cfrPlain = cfrDescription(v.description);
+                        const hasDate = vx.inspection_date && !vx.inspection_date.startsWith("1970-01-01");
+                        return (
+                          <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isOos ? "#fef2f2" : "transparent" }}>
+                            <td style={{ padding: "8px 12px", whiteSpace: "nowrap", color: hasDate ? "#374151" : "#94a3b8", fontStyle: hasDate ? "normal" : "italic" }}>
+                              {hasDate ? fmtDate(vx.inspection_date) : "Date unavailable"}
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              {catName
+                                ? <span style={{ color: "#374151" }}>{catName}</span>
+                                : <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.violation_code ?? "—"}</span>
+                              }
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              {cfrPlain ? (
+                                <div>
+                                  <span style={{ color: "#374151", display: "block", fontWeight: 600 }}>{cfrPlain}</span>
+                                  <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{v.description}</span>
+                                </div>
+                              ) : (
+                                <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.description ?? "—"}</span>
+                              )}
+                            </td>
+                            <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.unit_type ?? "—"}</td>
+                            <td style={{ padding: "8px 12px", color: isOos ? "#ef4444" : "#22c55e", fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isOos ? "YES" : "NO"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Insurance History */}
+            {bucketInsurance.length > 0 && (
+              <>
+                <SubHeader title="Insurance History" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Type", "Insurer", "Policy #", "Effective", "Cancelled", "Status"]} /></thead>
+                    <tbody>
+                      {bucketInsurance.map((ins, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                          <td style={{ padding: "8px 12px" }}>
+                            <span style={{ color: "#374151", display: "block" }}>{insuranceTypeLabel(ins.policy_type)}</span>
+                            {ins.policy_type && INSURANCE_FORM_CODES[ins.policy_type.trim().toUpperCase()] && (
+                              <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{ins.policy_type}</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.insurer_name ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_number ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(ins.effective_date)}</td>
+                          <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(ins.cancellation_date)}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* OOS Orders & Reinstatements */}
+            {bucketOos.length > 0 && (
+              <>
+                <SubHeader title="OOS Orders & Reinstatements" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Order Date", "Reason", "Status", "Reinstated"]} /></thead>
+                    <tbody>
+                      {bucketOos.map((o, i) => {
+                        const isActive    = o.status === "ACTIVE";
+                        const isReinstated = o.status === "REINSTATED" || !!o.reinstatement_date;
+                        return (
+                          <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isActive ? "#fef2f2" : "transparent" }}>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(o.order_date)}</td>
+                            <td style={{ padding: "8px 12px", color: "#374151", maxWidth: "280px" }}>{o.reason ?? "—"}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: isActive ? "#fef2f2" : isReinstated ? "#f0fdf4" : "#f8fafc", color: isActive ? "#ef4444" : isReinstated ? "#22c55e" : "#64748b" }}>
+                                {o.status ?? "—"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px", color: "#22c55e" }}>{fmtDate(o.reinstatement_date)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Revocation History */}
+            {bucketRevocations.length > 0 && (
+              <>
+                <SubHeader title="Revocation History" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Date", "Description"]} /></thead>
+                    <tbody>
+                      {bucketRevocations.map((a, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
+                          <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(a.event_date)}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>Involuntary Revocation</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Authority History */}
+            {bucketAuthority.length > 0 && (
+              <>
+                <SubHeader title="Authority History" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Type", "Status", "Effective", "Revoked", "Reason"]} /></thead>
+                    <tbody>
+                      {bucketAuthority.map((a, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                          <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{a.authority_type ?? "—"}</td>
+                          <td style={{ padding: "8px 12px" }}>
+                            {a.status ? (
+                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: a.status.toLowerCase().includes("active") ? "#f0fdf4" : "#f8fafc", color: a.status.toLowerCase().includes("active") ? "#22c55e" : "#64748b" }}>
+                                {a.status}
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(a.effective_date)}</td>
+                          <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(a.revocation_date)}</td>
+                          <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px" }}>{a.reason ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Inspection History */}
+            {bucketInspections.length > 0 && (
+              <>
+                <SubHeader title="Inspection History" />
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead><TH cols={["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"]} /></thead>
+                    <tbody>
+                      {bucketInspections.map((insp, i) => {
+                        const hasOos    = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
+                        const hasDate   = insp.inspection_date && !insp.inspection_date.startsWith("1970-01-01");
+                        return (
+                          <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
+                            <td style={{ padding: "8px 12px", color: hasDate ? "#374151" : "#94a3b8", fontStyle: hasDate ? "normal" : "italic" }}>
+                              {hasDate ? fmtDate(insp.inspection_date) : "Date unavailable"}
+                            </td>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(insp.state)}</td>
+                            <td style={{ padding: "8px 12px", color: "#374151", fontSize: "11px" }}>
+                              {insp.level != null ? (INSPECTION_LEVELS[parseInt(insp.level)] ?? `Level ${insp.level}`) : "—"}
+                            </td>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
+                            <td style={{ padding: "8px 12px", color: (insp.oos_vehicles ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_vehicles ?? 0) > 0 ? 700 : 400 }}>{insp.oos_vehicles ?? "—"}</td>
+                            <td style={{ padding: "8px 12px", color: (insp.oos_drivers ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_drivers ?? 0) > 0 ? 700 : 400 }}>{insp.oos_drivers ?? "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Safety Rating */}
+            {ratingInBucket && (
+              <>
+                <SubHeader title="Safety Rating" />
+                {carrier.safety_rating && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                    <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", minWidth: "160px", textTransform: "uppercase" }}>Rating</span>
+                    <span style={{
+                      display: "inline-block", padding: "4px 14px", borderRadius: "20px", fontSize: "13px", fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                      background: carrier.safety_rating.toLowerCase() === "satisfactory" ? "#f0fdf4" : carrier.safety_rating.toLowerCase() === "conditional" ? "#fff7ed" : carrier.safety_rating.toLowerCase() === "unsatisfactory" ? "#fef2f2" : "#f8fafc",
+                      color:      carrier.safety_rating.toLowerCase() === "satisfactory" ? "#22c55e" : carrier.safety_rating.toLowerCase() === "conditional" ? "#f97316" : carrier.safety_rating.toLowerCase() === "unsatisfactory" ? "#ef4444" : "#64748b",
+                    }}>
+                      {carrier.safety_rating.toUpperCase()}
+                    </span>
+                    {dateOnly(carrier.safety_rating_date) && (
+                      <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
+                        as of {fmtDate(carrier.safety_rating_date)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <InfoRow label="Review Type" value={carrier.review_type} />
+                <InfoRow label="Review Date" value={carrier.review_date ? fmtDate(carrier.review_date) : undefined} />
+                {(() => {
+                  const rd = carrier.safety_rating_date || carrier.review_date;
+                  if (!rd) return null;
+                  const yearsOld = new Date().getUTCFullYear() - parseInt(rd.slice(0, 4));
+                  if (yearsOld <= 10) return null;
+                  return (
+                    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
+                      <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
+                        ⚠ This rating is {yearsOld} years old — may not reflect current safety status
+                      </p>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* SMS Safety Scores */}
+            {smsInBucket && sms && (
+              <>
+                <SubHeader title="SMS Safety Scores" />
+                {sms.score_date && (
+                  <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>
+                    SMS Period: {fmtDate(sms.score_date)}
+                  </p>
+                )}
+                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px", letterSpacing: "1px" }}>PERCENTILE RANKING (≥75 = ALERT)</p>
+                <ScoreRow label="UNSAFE DRIVING"        value={sms.unsafe_driving}               alert={sms.unsafe_driving_alert} />
+                <ScoreRow label="CRASH INDICATOR"       value={sms.crash_indicator}              alert={sms.crash_indicator_alert} />
+                <ScoreRow label="DRIVER FITNESS"        value={sms.driver_fitness}               alert={sms.driver_fitness_alert} />
+                <ScoreRow label="VEHICLE MAINTENANCE"   value={sms.vehicle_maintenance}          alert={sms.vehicle_maintenance_alert} />
+                <ScoreRow label="CONTROLLED SUBSTANCES" value={sms.controlled_substances_alcohol} alert={sms.controlled_substances_alcohol_alert} />
+                <ScoreRow label="HOS COMPLIANCE"        value={sms.hours_of_service_compliance}  alert={sms.hours_of_service_compliance_alert} />
+                <ScoreRow label="HAZARDOUS MATERIALS"   value={sms.hazardous_materials}          alert={sms.hazardous_materials_alert} />
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Props ───────────────────────────────────────────────────
 type Props = {
   carrier: Carrier;
   sms: SmsScores | null;
@@ -286,86 +655,59 @@ type Props = {
   oosOrders: OosOrder[];
 };
 
+// ─── Main component ──────────────────────────────────────────
 export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders }: Props) {
   const [accidentDate, setAccidentDate] = useState("");
 
-  const crashesToShow = accidentDate
-    ? crashes.filter((c) => {
-        const cd = dateOnly(c.crash_date);
-        return cd !== null && cd <= accidentDate;
-      })
-    : crashes;
+  // Clean crashes once: drop 1970-01-01 placeholders, dedup by report_number, remove zero-value
+  const cleanedCrashes = (() => {
+    const seen = new Set<string>();
+    const deduped: Crash[] = [];
+    for (const c of crashes) {
+      if (!c.crash_date || c.crash_date.startsWith("1970-01-01")) continue;
+      if (c.report_number) {
+        if (seen.has(c.report_number)) continue;
+        seen.add(c.report_number);
+      }
+      deduped.push(c);
+    }
+    return deduped.filter(c => (c.fatal ?? 0) > 0 || (c.injury ?? 0) > 0 || (c.towaway ?? 0) > 0);
+  })();
 
-  // Step 4 — only non-compliant inspections (violations or OOS found)
-  const allNonCompliantInspections = inspections.filter(isNonCompliant);
+  const revocations = alerts.filter(a => a.event_type === "INVOLUNTARY_REVOCATION");
 
-  const inspectionsToShow = accidentDate
-    ? inspections
-        .filter((i) => {
-          const id = dateOnly(i.inspection_date);
-          return id !== null && id <= accidentDate;
-        })
-        .filter(isNonCompliant)
-    : allNonCompliantInspections;
+  const insuranceActiveAtDate  = accidentDate ? insurance.some(ins => isInsuranceActiveOn(ins, accidentDate))  : false;
+  const authorityActiveAtDate  = accidentDate ? authorityHistory.some(a => isAuthorityActiveOn(a, accidentDate)) : false;
 
-  const revocations = alerts.filter((a) => a.event_type === "INVOLUNTARY_REVOCATION");
-
-  const insuranceActiveAtDate = accidentDate ? insurance.some((ins) => isInsuranceActiveOn(ins, accidentDate)) : false;
-  const authorityActiveAtDate = accidentDate ? authorityHistory.some((a) => isAuthorityActiveOn(a, accidentDate)) : false;
-
-  const totalCrashes = crashesToShow.length;
-  const fatalCrashes = crashesToShow.reduce((sum, c) => sum + (c.fatal ?? 0), 0);
-  const injuryCrashes = crashesToShow.reduce((sum, c) => sum + (c.injury ?? 0), 0);
-
-  const smsAlerts = [
-    sms?.unsafe_driving_alert,
-    sms?.crash_indicator_alert,
-    sms?.driver_fitness_alert,
-    sms?.vehicle_maintenance_alert,
-  ].filter(Boolean).length;
-
-  const hasSmsData = sms !== null;
-
-  const risk = smsAlerts >= 3 || fatalCrashes > 0
+  // Risk badge (based on all-time data)
+  const smsAlerts  = [sms?.unsafe_driving_alert, sms?.crash_indicator_alert, sms?.driver_fitness_alert, sms?.vehicle_maintenance_alert].filter(Boolean).length;
+  const totalFatal = cleanedCrashes.reduce((s, c) => s + (c.fatal ?? 0), 0);
+  const risk = smsAlerts >= 3 || totalFatal > 0
     ? { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" }
-    : smsAlerts >= 1 || totalCrashes > 0
-    ? { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" }
-    : { label: "CLEAR", color: "#22c55e", bg: "#f0fdf4" };
+    : smsAlerts >= 1 || cleanedCrashes.length > 0
+    ? { label: "ELEVATED",  color: "#f97316", bg: "#fff7ed" }
+    : { label: "CLEAR",     color: "#22c55e", bg: "#f0fdf4" };
 
-  // Step 5 — timeline analysis periods (only computed when accident date is set)
-  let timelinePeriods: Array<{ label: string; sub: string; crashes: number; inspections: number; oos: number }> | null = null;
+  // Bucket boundaries
+  let cutoff24     = "";
+  let cutoff24Minus1 = "";
+  let today        = "";
   if (accidentDate) {
-    const accDt = new Date(accidentDate + "T00:00:00Z");
+    const accDt    = new Date(accidentDate + "T00:00:00Z");
     const cutoffDt = new Date(accDt);
     cutoffDt.setUTCMonth(cutoffDt.getUTCMonth() - 24);
-    const cutoff24 = cutoffDt.toISOString().slice(0, 10);
-
-    const oosInspections = inspections.filter((i) => (i.oos_vehicles ?? 0) > 0 || (i.oos_drivers ?? 0) > 0);
-
-    timelinePeriods = [
-      {
-        label: "More than 24 months before accident",
-        sub: `Before ${fmtDate(cutoff24)}`,
-        crashes: crashes.filter((c) => { const d = dateOnly(c.crash_date); return d !== null && d < cutoff24; }).length,
-        inspections: allNonCompliantInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d < cutoff24; }).length,
-        oos: oosInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d < cutoff24; }).length,
-      },
-      {
-        label: "Within 24 months before accident",
-        sub: `${fmtDate(cutoff24)} – ${fmtDate(accidentDate)}`,
-        crashes: crashes.filter((c) => { const d = dateOnly(c.crash_date); return d !== null && d >= cutoff24 && d <= accidentDate; }).length,
-        inspections: allNonCompliantInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d >= cutoff24 && d <= accidentDate; }).length,
-        oos: oosInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d >= cutoff24 && d <= accidentDate; }).length,
-      },
-      {
-        label: "Accident date to today",
-        sub: `After ${fmtDate(accidentDate)}`,
-        crashes: crashes.filter((c) => { const d = dateOnly(c.crash_date); return d !== null && d > accidentDate; }).length,
-        inspections: allNonCompliantInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d > accidentDate; }).length,
-        oos: oosInspections.filter((i) => { const d = dateOnly(i.inspection_date); return d !== null && d > accidentDate; }).length,
-      },
-    ];
+    cutoff24 = cutoffDt.toISOString().slice(0, 10);
+    const c24Dt = new Date(cutoff24 + "T00:00:00Z");
+    c24Dt.setUTCDate(c24Dt.getUTCDate() - 1);
+    cutoff24Minus1 = c24Dt.toISOString().slice(0, 10);
+    today = new Date().toISOString().slice(0, 10);
   }
+
+  const sharedProps = {
+    crashes: cleanedCrashes, violations, insurance,
+    oosOrders, revocations, authorityHistory, inspections,
+    carrier, sms,
+  };
 
   return (
     <main style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'DM Sans', sans-serif" }}>
@@ -387,7 +729,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           ← Back to search
         </Link>
 
-        {/* Carrier overview */}
+        {/* Section 1 — Carrier Info */}
         <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px", marginBottom: "24px" }}>
             <div>
@@ -404,16 +746,21 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               {risk.label}
             </span>
           </div>
-          <InfoRow label="Address" value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
-          <InfoRow label="Phone" value={carrier.phone} />
-          <InfoRow label="State" value={stateName(carrier.state)} />
-          <InfoRow label="Cargo Type" value={carrier.cargo_type} />
-          <InfoRow label="Status" value={carrier.status} />
+          <InfoRow label="Address"      value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
+          <InfoRow label="Phone"        value={carrier.phone} />
+          <InfoRow label="State"        value={stateName(carrier.state)} />
+          <InfoRow label="Cargo Type"   value={carrier.cargo_type} />
+          <InfoRow label="Status"       value={carrier.status} />
           <InfoRow label="Total Drivers" value={carrier.total_drivers} />
-          <InfoRow label="Total Trucks" value={carrier.total_trucks} />
+          <InfoRow label="Total Trucks"  value={carrier.total_trucks} />
+          {(carrier.total_drivers === 0 && carrier.total_trucks === 0) && (
+            <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "8px" }}>
+              * Private carriers may under-report fleet size to FMCSA
+            </p>
+          )}
         </div>
 
-        {/* Accident Date Filter */}
+        {/* Section 2 — Accident Date Filter */}
         <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Accident Date Filter</h2>
           <label style={{ display: "flex", flexDirection: "column", gap: "6px", maxWidth: "240px" }}>
@@ -421,7 +768,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             <input
               type="date"
               value={accidentDate}
-              onChange={(e) => setAccidentDate(e.target.value)}
+              onChange={e => setAccidentDate(e.target.value)}
               style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "14px", fontFamily: "'DM Sans', sans-serif", color: "#0f172a" }}
             />
           </label>
@@ -436,439 +783,43 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                 <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>AUTHORITY ACTIVE</p>
                 <p style={{ fontSize: "18px", fontWeight: 700, color: authorityActiveAtDate ? "#22c55e" : "#ef4444" }}>{authorityActiveAtDate ? "YES" : "NO"}</p>
               </div>
-              <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "12px 20px", minWidth: "170px" }}>
-                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>CRASHES AT ACCIDENT DATE</p>
-                <p style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a" }}>{crashesToShow.length}</p>
-              </div>
             </div>
           )}
         </div>
 
-        {/* Step 5 — Timeline Analysis (only shown when accident date is set) */}
-        {timelinePeriods && (
-          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>Timeline Analysis</h2>
-            <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "20px" }}>
-              Accident date: {fmtDate(accidentDate)} · Counts across all records (not filtered by accident date)
+        {/* Sections 3 / 4 / 5 */}
+        {!accidentDate ? (
+          <div style={{ background: "white", borderRadius: "12px", padding: "32px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", textAlign: "center" }}>
+            <p style={{ fontSize: "14px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
+              Enter an accident date above to see records broken down by time period.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
-              {timelinePeriods.map((period, idx) => (
-                <div key={idx} style={{
-                  background: idx === 1 ? "#fffbeb" : "#f8fafc",
-                  borderRadius: "10px", padding: "16px 20px",
-                  border: idx === 1 ? "1px solid #fde68a" : "1px solid #f1f5f9",
-                }}>
-                  <p style={{ fontSize: "11px", fontWeight: 600, color: "#374151", fontFamily: "'DM Mono', monospace", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.4px", lineHeight: "1.4" }}>{period.label}</p>
-                  <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "14px" }}>{period.sub}</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "12px", color: "#64748b" }}>Crashes</span>
-                      <span style={{ fontSize: "18px", fontWeight: 700, color: period.crashes > 0 ? "#ef4444" : "#374151" }}>{period.crashes}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "12px", color: "#64748b" }}>Inspections w/ Violations</span>
-                      <span style={{ fontSize: "18px", fontWeight: 700, color: period.inspections > 0 ? "#f97316" : "#374151" }}>{period.inspections}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "12px", color: "#64748b" }}>OOS Events</span>
-                      <span style={{ fontSize: "18px", fontWeight: 700, color: period.oos > 0 ? "#ef4444" : "#374151" }}>{period.oos}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
+        ) : (
+          <>
+            <TimeBucketSection
+              label="Within 24 Months Prior to Accident"
+              sub={`${fmtDate(cutoff24)} – ${fmtDate(accidentDate)}`}
+              highlight
+              bucketStart={cutoff24}
+              bucketEnd={accidentDate}
+              {...sharedProps}
+            />
+            <TimeBucketSection
+              label="More Than 24 Months Prior to Accident"
+              sub={`Before ${fmtDate(cutoff24)}`}
+              bucketStart={null}
+              bucketEnd={cutoff24Minus1}
+              {...sharedProps}
+            />
+            <TimeBucketSection
+              label="From Accident Date to Today"
+              sub={`${fmtDate(accidentDate)} – Today`}
+              bucketStart={accidentDate}
+              bucketEnd={today}
+              {...sharedProps}
+            />
+          </>
         )}
-
-        {/* Safety Rating */}
-        {(carrier.safety_rating || carrier.review_type) && (
-          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-            <SectionHeader title="Safety Rating" source="FMCSA Safety Rating (Compliance Review)" />
-            {carrier.safety_rating && (
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-                <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", minWidth: "160px", textTransform: "uppercase" }}>Rating</span>
-                <span style={{
-                  display: "inline-block", padding: "4px 14px", borderRadius: "20px", fontSize: "13px", fontWeight: 700, fontFamily: "'DM Mono', monospace",
-                  background: carrier.safety_rating.toLowerCase() === "satisfactory" ? "#f0fdf4" : carrier.safety_rating.toLowerCase() === "conditional" ? "#fff7ed" : carrier.safety_rating.toLowerCase() === "unsatisfactory" ? "#fef2f2" : "#f8fafc",
-                  color: carrier.safety_rating.toLowerCase() === "satisfactory" ? "#22c55e" : carrier.safety_rating.toLowerCase() === "conditional" ? "#f97316" : carrier.safety_rating.toLowerCase() === "unsatisfactory" ? "#ef4444" : "#64748b",
-                }}>
-                  {carrier.safety_rating.toUpperCase()}
-                </span>
-                {dateOnly(carrier.safety_rating_date) && (
-                  <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-                    as of {fmtDate(carrier.safety_rating_date)}
-                  </span>
-                )}
-              </div>
-            )}
-            <InfoRow label="Review Type" value={carrier.review_type} />
-            <InfoRow label="Review Date" value={carrier.review_date ? fmtDate(carrier.review_date) : undefined} />
-          </div>
-        )}
-
-        {/* SMS Safety Scores */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader
-            title="SMS Safety Scores"
-            source="FMCSA SMS (Safety Measurement System)"
-            lastUpdated={sms?.fetched_at}
-            right={sms?.score_date && (
-              <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-                SMS Period: {fmtDate(sms.score_date)}
-              </span>
-            )}
-          />
-          {hasSmsData ? (
-            <>
-              <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px", letterSpacing: "1px" }}>PERCENTILE RANKING (≥75 = ALERT)</p>
-              <ScoreRow label="UNSAFE DRIVING" value={sms!.unsafe_driving} alert={sms!.unsafe_driving_alert} />
-              <ScoreRow label="CRASH INDICATOR" value={sms!.crash_indicator} alert={sms!.crash_indicator_alert} />
-              <ScoreRow label="DRIVER FITNESS" value={sms!.driver_fitness} alert={sms!.driver_fitness_alert} />
-              <ScoreRow label="VEHICLE MAINTENANCE" value={sms!.vehicle_maintenance} alert={sms!.vehicle_maintenance_alert} />
-              <ScoreRow label="CONTROLLED SUBSTANCES" value={sms!.controlled_substances_alcohol} alert={sms!.controlled_substances_alcohol_alert} />
-              <ScoreRow label="HOS COMPLIANCE" value={sms!.hours_of_service_compliance} alert={sms!.hours_of_service_compliance_alert} />
-              <ScoreRow label="HAZARDOUS MATERIALS" value={sms!.hazardous_materials} alert={sms!.hazardous_materials_alert} />
-            </>
-          ) : (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No SMS score data available for this carrier.</p>
-          )}
-        </div>
-
-        {/* Crash History */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader title="Crash History" source="FMCSA Crash Data (MCMIS)" lastUpdated={mostRecent(crashes.map((c) => c.imported_at))} />
-
-          {accidentDate && (
-            <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px" }}>
-              Showing {crashesToShow.length} of {crashes.length} crashes on or before {fmtDate(accidentDate)}
-            </p>
-          )}
-
-          {totalCrashes === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-              {accidentDate ? "No crashes on or before the accident date." : "No crash records found."}
-            </p>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
-                <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "12px 20px", minWidth: "100px" }}>
-                  <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>TOTAL</p>
-                  <p style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a" }}>{totalCrashes}</p>
-                </div>
-                {fatalCrashes > 0 && (
-                  <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "12px 20px", minWidth: "100px" }}>
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>FATAL</p>
-                    <p style={{ fontSize: "24px", fontWeight: 700, color: "#ef4444" }}>{fatalCrashes}</p>
-                  </div>
-                )}
-                {injuryCrashes > 0 && (
-                  <div style={{ background: "#fff7ed", borderRadius: "8px", padding: "12px 20px", minWidth: "100px" }}>
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>INJURY</p>
-                    <p style={{ fontSize: "24px", fontWeight: 700, color: "#f97316" }}>{injuryCrashes}</p>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                      {["Date", "State", "Fatal", "Injury", "Towaway", "Report #"].map((h) => (
-                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {crashesToShow.map((c, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: c.fatal > 0 ? "#fef2f2" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(c.crash_date)}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(c.state)}</td>
-                        <td style={{ padding: "8px 12px", color: c.fatal > 0 ? "#ef4444" : "#374151", fontWeight: c.fatal > 0 ? 700 : 400 }}>{c.fatal}</td>
-                        <td style={{ padding: "8px 12px", color: c.injury > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{c.towaway}</td>
-                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{c.report_number ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Inspection History — Step 4: clean inspections hidden */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader
-            title="Inspection History"
-            source="FMCSA Inspection Data (MCMIS)"
-            lastUpdated={mostRecent(inspections.map((i) => i.imported_at))}
-          />
-
-          {accidentDate && (
-            <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px" }}>
-              Showing {inspectionsToShow.length} non-compliant inspection{inspectionsToShow.length !== 1 ? "s" : ""} on or before {fmtDate(accidentDate)} · clean inspections hidden
-            </p>
-          )}
-
-          {!accidentDate && (
-            <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px" }}>
-              Showing {allNonCompliantInspections.length} non-compliant inspection{allNonCompliantInspections.length !== 1 ? "s" : ""} of {inspections.length} total · clean inspections hidden
-            </p>
-          )}
-
-          {inspectionsToShow.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-              {accidentDate ? "No non-compliant inspections on or before the accident date." : "No non-compliant inspection records found."}
-            </p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {inspectionsToShow.map((insp, i) => {
-                    const hasOos = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
-                    return (
-                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(insp.inspection_date)}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(insp.state)}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{insp.level ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: (insp.oos_vehicles ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_vehicles ?? 0) > 0 ? 700 : 400 }}>{insp.oos_vehicles ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: (insp.oos_drivers ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_drivers ?? 0) > 0 ? 700 : 400 }}>{insp.oos_drivers ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Violations — Step 3: plain-English category + CFR descriptions */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader title="Violations" source="FMCSA Inspection Data (MCMIS)" lastUpdated={mostRecent(violations.map((v) => v.imported_at))} />
-          {violations.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No violation records found.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Category", "CFR Section", "Unit", "OOS"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {violations.map((v, i) => {
-                    const isOos = v.oos_indicator === "Y";
-                    const catCode = v.violation_code ? parseInt(v.violation_code) : null;
-                    const catName = catCode !== null && !isNaN(catCode) ? (VIOLATION_CATEGORY[catCode] ?? null) : null;
-                    const cfrPlain = cfrDescription(v.description);
-                    return (
-                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isOos ? "#fef2f2" : "transparent" }}>
-                        <td style={{ padding: "8px 12px" }}>
-                          {catName ? (
-                            <span style={{ color: "#374151" }}>{catName}</span>
-                          ) : (
-                            <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.violation_code ?? "—"}</span>
-                          )}
-                        </td>
-                        <td style={{ padding: "8px 12px" }}>
-                          {cfrPlain ? (
-                            <div>
-                              <span style={{ color: "#374151", display: "block" }}>{cfrPlain}</span>
-                              <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{v.description}</span>
-                            </div>
-                          ) : (
-                            <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.description ?? "—"}</span>
-                          )}
-                        </td>
-                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.unit_type ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: isOos ? "#ef4444" : "#22c55e", fontWeight: 700, fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isOos ? "YES" : "NO"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Insurance History — Step 3: translated policy type */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader
-            title="Insurance History"
-            source="FMCSA Insurance Filings"
-            lastUpdated={mostRecent(insurance.map((ins) => ins.imported_at))}
-            right={accidentDate && (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>ACTIVE ON {fmtDate(accidentDate)}</span>
-                <YesNoBadge value={insuranceActiveAtDate} />
-              </div>
-            )}
-          />
-          {insurance.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No insurance records found.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Type", "Insurer", "Policy #", "Effective", "Cancelled", "Status"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {insurance.map((ins, i) => {
-                    const activeAtDate = accidentDate ? isInsuranceActiveOn(ins, accidentDate) : null;
-                    return (
-                      <tr key={i} style={{
-                        borderBottom: "1px solid #f8fafc",
-                        background: activeAtDate ? "#f0fdf4" : "transparent",
-                        opacity: activeAtDate === false ? 0.4 : 1,
-                      }}>
-                        <td style={{ padding: "8px 12px" }}>
-                          <div>
-                            <span style={{ color: "#374151", display: "block" }}>{insuranceTypeLabel(ins.policy_type)}</span>
-                            {ins.policy_type && INSURANCE_FORM_CODES[ins.policy_type.trim().toUpperCase()] && (
-                              <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{ins.policy_type}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{ins.insurer_name ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_number ?? "—"}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(ins.effective_date)}</td>
-                        <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(ins.cancellation_date)}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* OOS Orders & Reinstatements */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader title="OOS Orders & Reinstatements" source="FMCSA Out-of-Service Orders" lastUpdated={mostRecent(oosOrders.map((o) => o.detected_at))} />
-          {oosOrders.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No OOS order records found.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Order Date", "Reason", "Status", "Reinstated"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {oosOrders.map((o, i) => {
-                    const isActive = o.status === "ACTIVE";
-                    const isReinstated = o.status === "REINSTATED" || !!o.reinstatement_date;
-                    return (
-                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isActive ? "#fef2f2" : "transparent" }}>
-                        <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(o.order_date)}</td>
-                        <td style={{ padding: "8px 12px", color: "#374151", maxWidth: "280px" }}>{o.reason ?? "—"}</td>
-                        <td style={{ padding: "8px 12px" }}>
-                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: isActive ? "#fef2f2" : isReinstated ? "#f0fdf4" : "#f8fafc", color: isActive ? "#ef4444" : isReinstated ? "#22c55e" : "#64748b" }}>
-                            {o.status ?? "—"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "8px 12px", color: "#22c55e" }}>{fmtDate(o.reinstatement_date)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Revocation History */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-          <SectionHeader title="Revocation History" source="FMCSA Revocation Records" lastUpdated={mostRecent(revocations.map((a) => a.detected_at))} />
-          {revocations.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No revocation records found.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Date", "Description"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {revocations.map((a, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
-                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(a.event_date)}</td>
-                      <td style={{ padding: "8px 12px", color: "#374151" }}>Involuntary Revocation</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Authority History */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-          <SectionHeader
-            title="Authority History"
-            source="FMCSA Operating Authority History (AuthHist)"
-            lastUpdated={mostRecent(authorityHistory.map((a) => a.imported_at))}
-            right={accidentDate && (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>ACTIVE ON {fmtDate(accidentDate)}</span>
-                <YesNoBadge value={authorityActiveAtDate} />
-              </div>
-            )}
-          />
-          {authorityHistory.length === 0 ? (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>No authority records found.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Type", "Status", "Effective", "Revoked", "Reason"].map((h) => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {authorityHistory.map((a, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
-                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{a.authority_type ?? "—"}</td>
-                      <td style={{ padding: "8px 12px" }}>
-                        {a.status ? (
-                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: a.status.toLowerCase().includes("active") ? "#f0fdf4" : "#f8fafc", color: a.status.toLowerCase().includes("active") ? "#22c55e" : "#64748b" }}>
-                            {a.status}
-                          </span>
-                        ) : "—"}
-                      </td>
-                      <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(a.effective_date)}</td>
-                      <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(a.revocation_date)}</td>
-                      <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px" }}>{a.reason ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </div>
     </main>
   );

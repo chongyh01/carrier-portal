@@ -66,6 +66,7 @@ export type Violation = {
   unit_type?: string;
   basic_category?: string;
   imported_at?: string;
+  inspection_date?: string;
 };
 
 export type Insurance = {

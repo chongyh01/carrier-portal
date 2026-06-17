@@ -42,7 +42,7 @@ async function fetchSmsScores(dot: string): Promise<SmsScores | null> {
 
 async function fetchCrashes(dot: string): Promise<Crash[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/crashes?select=crash_date,state,fatal,injury,towaway,report_number,imported_at&dot_number=eq.${dot}&order=crash_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/crashes?select=crash_date,state,fatal,injury,towaway,report_number,imported_at&dot_number=eq.${dot}&order=crash_date.desc&limit=200`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -51,7 +51,7 @@ async function fetchCrashes(dot: string): Promise<Crash[]> {
 
 async function fetchInspections(dot: string): Promise<Inspection[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/inspections?select=id,inspection_date,state,level,oos_vehicles,oos_drivers,total_violations,imported_at&dot_number=eq.${dot}&order=inspection_date.desc&limit=50`,
+    `${SUPABASE_URL}/rest/v1/inspections?select=id,inspection_date,state,level,oos_vehicles,oos_drivers,total_violations,imported_at&dot_number=eq.${dot}&order=inspection_date.desc&limit=200`,
     { headers: HEADERS, cache: 'no-store' }
   );
   if (!res.ok) return [];
@@ -59,12 +59,32 @@ async function fetchInspections(dot: string): Promise<Inspection[]> {
 }
 
 async function fetchViolations(dot: string): Promise<Violation[]> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at&dot_number=eq.${dot}&limit=100`,
-    { headers: HEADERS, cache: 'no-store' }
-  );
-  if (!res.ok) return [];
-  return res.json();
+  // inspection_id FK is not populated in the import pipeline, so we can't join directly.
+  // Instead, fetch violations and inspections separately, then distribute violation rows
+  // across inspections in date order using each inspection's total_violations count.
+  const [violRes, inspRes] = await Promise.all([
+    fetch(
+      `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at&dot_number=eq.${dot}&limit=500`,
+      { headers: HEADERS, cache: 'no-store' }
+    ),
+    fetch(
+      `${SUPABASE_URL}/rest/v1/inspections?select=inspection_date,total_violations&dot_number=eq.${dot}&order=inspection_date.desc&limit=200`,
+      { headers: HEADERS, cache: 'no-store' }
+    ),
+  ]);
+  if (!violRes.ok) return [];
+  const violations: Violation[] = await violRes.json();
+  if (inspRes.ok) {
+    const inspections: Array<{ inspection_date?: string; total_violations?: number }> = await inspRes.json();
+    let idx = 0;
+    for (const insp of inspections) {
+      const count = insp.total_violations ?? 0;
+      for (let i = 0; i < count && idx < violations.length; i++, idx++) {
+        violations[idx].inspection_date = insp.inspection_date;
+      }
+    }
+  }
+  return violations;
 }
 
 async function fetchInsurance(dot: string): Promise<Insurance[]> {
