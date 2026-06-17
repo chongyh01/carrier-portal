@@ -642,6 +642,92 @@ function TimeBucketSection({
   );
 }
 
+// ─── Derive insurance/authority status with auditable basis ──
+function deriveInsuranceBasis(
+  insurance: Insurance[],
+  accidentDate: string,
+): { active: boolean; basis: string } {
+  if (insurance.length === 0)
+    return { active: false, basis: "No FMCSA insurance filings found for this carrier." };
+
+  const candidates = insurance
+    .filter(ins => {
+      const eff = dateOnly(ins.effective_date);
+      return eff !== null && eff <= accidentDate;
+    })
+    .sort((a, b) => {
+      const da = dateOnly(a.effective_date) ?? "";
+      const db = dateOnly(b.effective_date) ?? "";
+      return db.localeCompare(da);
+    });
+
+  if (candidates.length === 0)
+    return {
+      active: false,
+      basis: `No insurance filing found with effective date on or before ${fmtDate(accidentDate)}.`,
+    };
+
+  const rec = candidates[0];
+  const cancel = dateOnly(rec.cancellation_date);
+  const policyRef = rec.policy_number ? `Policy ${rec.policy_number}` : "Policy on file";
+
+  if (cancel && cancel < accidentDate) {
+    return {
+      active: false,
+      basis: `${policyRef} cancelled on ${fmtDate(rec.cancellation_date)}. No active replacement found before ${fmtDate(accidentDate)}.`,
+    };
+  }
+
+  const insurer = rec.insurer_name ?? "insurer on file";
+  const cancelClause = cancel ? "" : ", no cancellation before accident date";
+  return {
+    active: true,
+    basis: `${policyRef} with ${insurer} effective ${fmtDate(rec.effective_date)}${cancelClause}.`,
+  };
+}
+
+function deriveAuthorityBasis(
+  authorityHistory: AuthorityRecord[],
+  accidentDate: string,
+): { active: boolean; basis: string } {
+  if (authorityHistory.length === 0)
+    return { active: false, basis: "No operating authority records found for this carrier." };
+
+  const candidates = authorityHistory
+    .filter(a => {
+      const eff = dateOnly(a.effective_date);
+      return eff !== null && eff <= accidentDate;
+    })
+    .sort((a, b) => {
+      const da = dateOnly(a.effective_date) ?? "";
+      const db = dateOnly(b.effective_date) ?? "";
+      return db.localeCompare(da);
+    });
+
+  if (candidates.length === 0)
+    return {
+      active: false,
+      basis: `No operating authority found with effective date on or before ${fmtDate(accidentDate)}.`,
+    };
+
+  const rec = candidates[0];
+  const rev = dateOnly(rec.revocation_date);
+  const authType = rec.authority_type ? `${rec.authority_type} authority` : "Authority";
+
+  if (rev && rev < accidentDate) {
+    return {
+      active: false,
+      basis: `${authType} effective ${fmtDate(rec.effective_date)}, revoked ${fmtDate(rec.revocation_date)}. No reinstatement found before ${fmtDate(accidentDate)}.`,
+    };
+  }
+
+  const revClause = rev ? "" : ", no revocation before accident date";
+  return {
+    active: true,
+    basis: `${authType} effective ${fmtDate(rec.effective_date)}${revClause}.`,
+  };
+}
+
 // ─── Props ───────────────────────────────────────────────────
 type Props = {
   carrier: Carrier;
@@ -676,8 +762,10 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
   const revocations = alerts.filter(a => a.event_type === "INVOLUNTARY_REVOCATION");
 
-  const insuranceActiveAtDate  = accidentDate ? insurance.some(ins => isInsuranceActiveOn(ins, accidentDate))  : false;
-  const authorityActiveAtDate  = accidentDate ? authorityHistory.some(a => isAuthorityActiveOn(a, accidentDate)) : false;
+  const insuranceDerived  = accidentDate ? deriveInsuranceBasis(insurance, accidentDate)  : null;
+  const authorityDerived  = accidentDate ? deriveAuthorityBasis(authorityHistory, accidentDate) : null;
+  const insuranceActiveAtDate = insuranceDerived?.active ?? false;
+  const authorityActiveAtDate = authorityDerived?.active ?? false;
 
   // Risk badge (based on all-time data)
   const smsAlerts  = [sms?.unsafe_driving_alert, sms?.crash_indicator_alert, sms?.driver_fitness_alert, sms?.vehicle_maintenance_alert].filter(Boolean).length;
@@ -773,15 +861,29 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             />
           </label>
 
-          {accidentDate && (
+          {accidentDate && insuranceDerived && authorityDerived && (
             <div style={{ display: "flex", gap: "16px", marginTop: "20px", flexWrap: "wrap" }}>
-              <div style={{ background: insuranceActiveAtDate ? "#f0fdf4" : "#fef2f2", borderRadius: "8px", padding: "12px 20px", minWidth: "170px" }}>
-                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>INSURANCE ACTIVE</p>
-                <p style={{ fontSize: "18px", fontWeight: 700, color: insuranceActiveAtDate ? "#22c55e" : "#ef4444" }}>{insuranceActiveAtDate ? "YES" : "NO"}</p>
+              {/* Insurance status card */}
+              <div style={{ background: insuranceDerived.active ? "#f0fdf4" : "#fef2f2", borderRadius: "8px", padding: "16px 20px", minWidth: "240px", maxWidth: "380px" }}>
+                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Insurance Status on {fmtDate(accidentDate)}
+                </p>
+                <p style={{ fontSize: "20px", fontWeight: 700, color: insuranceDerived.active ? "#22c55e" : "#ef4444", marginBottom: "10px" }}>
+                  {insuranceDerived.active ? "ACTIVE" : "INACTIVE"}
+                </p>
+                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.4px" }}>Basis</p>
+                <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}>{insuranceDerived.basis}</p>
               </div>
-              <div style={{ background: authorityActiveAtDate ? "#f0fdf4" : "#fef2f2", borderRadius: "8px", padding: "12px 20px", minWidth: "170px" }}>
-                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>AUTHORITY ACTIVE</p>
-                <p style={{ fontSize: "18px", fontWeight: 700, color: authorityActiveAtDate ? "#22c55e" : "#ef4444" }}>{authorityActiveAtDate ? "YES" : "NO"}</p>
+              {/* Authority status card */}
+              <div style={{ background: authorityDerived.active ? "#f0fdf4" : "#fef2f2", borderRadius: "8px", padding: "16px 20px", minWidth: "240px", maxWidth: "380px" }}>
+                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Authority Status on {fmtDate(accidentDate)}
+                </p>
+                <p style={{ fontSize: "20px", fontWeight: 700, color: authorityDerived.active ? "#22c55e" : "#ef4444", marginBottom: "10px" }}>
+                  {authorityDerived.active ? "ACTIVE" : "INACTIVE"}
+                </p>
+                <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.4px" }}>Basis</p>
+                <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}>{authorityDerived.basis}</p>
               </div>
             </div>
           )}
