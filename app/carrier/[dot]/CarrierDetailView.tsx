@@ -13,6 +13,9 @@ import type {
   AuthorityRecord,
   CarrierAlert,
   OosOrder,
+  Boc3Agent,
+  RejectedInsurance,
+  SuspectSuccessor,
 } from "./types";
 
 const ALERT_THRESHOLD = 75;
@@ -857,10 +860,13 @@ type Props = {
   authorityHistory: AuthorityRecord[];
   alerts: CarrierAlert[];
   oosOrders: OosOrder[];
+  boc3: Boc3Agent[];
+  rejectedInsurance: RejectedInsurance[];
+  suspectSuccessors: SuspectSuccessor[];
 };
 
 // ─── Main component ──────────────────────────────────────────
-export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders }: Props) {
+export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders, boc3, rejectedInsurance, suspectSuccessors }: Props) {
   const [accidentDate, setAccidentDate] = useState("");
 
   // Clean crashes once: drop 1970-01-01 placeholders, dedup by report_number (or date+state+stats fallback), remove zero-value
@@ -1115,6 +1121,98 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               {...sharedProps}
             />
           </>
+        )}
+
+        {/* Section — Chameleon Carrier Detection */}
+        {suspectSuccessors.length > 0 && (
+          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "2px solid #fca5a5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+            <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", marginBottom: "6px" }}>⚠ Possible Successor / Related Entities</h2>
+            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
+              The following carriers share the same address or phone number as this carrier. If this carrier has a history of revocation, these may be successor entities operating under a new DOT number. These are investigative leads — independent verification required.
+            </p>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Carrier Name", "DOT #", "MC #", "Status", "Connection"].map(h => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {suspectSuccessors.map((s, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                      <td style={{ padding: "8px 12px" }}>
+                        <a href={`/carrier/${s.dot_number}`} style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 600 }}>{s.legal_name}</a>
+                      </td>
+                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.dot_number}</td>
+                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.mc_number ?? "—"}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: s.status === "ACTIVE" ? "#f0fdf4" : "#fef2f2", color: s.status === "ACTIVE" ? "#22c55e" : "#ef4444" }}>
+                          {s.status ?? "UNKNOWN"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "8px 12px", color: "#f97316", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.connection_type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Section — BOC3 Process Agent */}
+        {boc3.length > 0 && (
+          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>Process Agent (BOC-3)</h2>
+            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
+              The BOC-3 agent is authorized to accept legal papers on behalf of this carrier in any US state. Serve litigation documents on this entity.
+            </p>
+            {boc3.map((agent, i) => (
+              <div key={i} style={{ padding: "12px 0", borderBottom: i < boc3.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                <p style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a", marginBottom: "4px" }}>{agent.company_name ?? "—"}</p>
+                {agent.attention_to && <p style={{ fontSize: "12px", color: "#64748b" }}>Attn: {agent.attention_to}</p>}
+                <p style={{ fontSize: "12px", color: "#64748b" }}>
+                  {[agent.address, agent.city, agent.state, agent.zip_code].filter(Boolean).join(", ")}
+                  {agent.country && agent.country !== "US" && ` (${agent.country})`}
+                </p>
+              </div>
+            ))}
+            <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA BOC-3 Filing</p>
+          </div>
+        )}
+
+        {/* Section — Rejected Insurance Filings */}
+        {rejectedInsurance.length > 0 && (
+          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #fecaca", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#991b1b", marginBottom: "6px" }}>Rejected Insurance Filings ({rejectedInsurance.length})</h2>
+            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
+              FMCSA rejected these insurance submissions. Each rejection indicates the carrier attempted to file insurance but FMCSA declined it — a significant finding for accident date coverage analysis.
+            </p>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                    {["Received", "Rejected", "Insurer", "Policy #", "Rejection Reason"].map(h => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rejectedInsurance.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
+                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(r.received_date)}</td>
+                      <td style={{ padding: "8px 12px", color: "#ef4444", whiteSpace: "nowrap", fontWeight: 600 }}>{fmtDate(r.rejected_date)}</td>
+                      <td style={{ padding: "8px 12px", color: "#374151" }}>{r.company_name ?? "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{r.policy_number ?? "—"}</td>
+                      <td style={{ padding: "8px 12px", color: "#7f1d1d", fontSize: "12px", lineHeight: "1.4" }}>{r.rejected_reason ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA Rejected Insurance Filings</p>
+          </div>
         )}
 
         {/* Required disclaimer */}

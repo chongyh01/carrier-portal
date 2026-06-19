@@ -102,3 +102,33 @@ export type OosOrder = {
   reinstatement_date?: string;
   detected_at?: string;
 };
+
+export type Boc3Agent = {
+  company_name?: string;
+  attention_to?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  country?: string;
+};
+
+export type RejectedInsurance = {
+  form_code?: string;
+  insurance_type?: string;
+  policy_number?: string;
+  received_date?: string;
+  rejected_date?: string;
+  company_name?: string;
+  rejected_reason?: string;
+  class_code?: string;
+};
+
+export type SuspectSuccessor = {
+  dot_number: string;
+  legal_name: string;
+  mc_number?: string;
+  status?: string;
+  connection_type: string;
+  first_authority_date?: string;
+};

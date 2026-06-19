@@ -10,6 +10,9 @@ import type {
   AuthorityRecord,
   CarrierAlert,
   OosOrder,
+  Boc3Agent,
+  RejectedInsurance,
+  SuspectSuccessor,
 } from "./types";
 
 const SUPABASE_URL = 'https://linlnqrroavcutfpmkiz.supabase.co';
@@ -123,9 +126,51 @@ async function fetchOosOrders(dot: string): Promise<OosOrder[]> {
   return res.json();
 }
 
+async function fetchBoc3(dot: string): Promise<Boc3Agent[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/boc3?select=company_name,attention_to,address,city,state,zip_code,country&dot_number=eq.${dot}&limit=5`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchRejectedInsurance(dot: string): Promise<RejectedInsurance[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/rejected_insurance?select=form_code,insurance_type,policy_number,received_date,rejected_date,company_name,rejected_reason,class_code&dot_number=eq.${dot}&order=rejected_date.desc&limit=20`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchSuspectSuccessors(dot: string, address?: string, phone?: string): Promise<SuspectSuccessor[]> {
+  if (!address && !phone) return [];
+  // Find carriers sharing address or phone, excluding the current carrier
+  const filters: string[] = [`dot_number=neq.${dot}`];
+  const orParts: string[] = [];
+  if (address && address.trim().length > 5) {
+    orParts.push(`address=ilike.${encodeURIComponent(address.trim())}`);
+  }
+  if (phone && phone.replace(/\D/g, '').length > 7) {
+    orParts.push(`phone=eq.${encodeURIComponent(phone.trim())}`);
+  }
+  if (orParts.length === 0) return [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&${filters.join('&')}&or=(${orParts.join(',')})&limit=10`,
+    { headers: HEADERS, cache: 'no-store' }
+  );
+  if (!res.ok) return [];
+  const data: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await res.json();
+  return data.map(c => ({
+    ...c,
+    connection_type: address && c.dot_number ? 'Same address' : 'Same phone number',
+  }));
+}
+
 export default async function CarrierDetailPage({ params }: { params: Promise<{ dot: string }> }) {
   const { dot } = await params;
-  const [carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders] = await Promise.all([
+  const [carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders, boc3, rejectedInsurance] = await Promise.all([
     fetchCarrier(dot),
     fetchSmsScores(dot),
     fetchCrashes(dot),
@@ -135,9 +180,13 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
     fetchAuthorityHistory(dot),
     fetchAlerts(dot),
     fetchOosOrders(dot),
+    fetchBoc3(dot),
+    fetchRejectedInsurance(dot),
   ]);
 
   if (!carrier) notFound();
+
+  const suspectSuccessors = await fetchSuspectSuccessors(dot, carrier.address, carrier.phone);
 
   return (
     <CarrierDetailView
@@ -150,6 +199,9 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
       authorityHistory={authorityHistory}
       alerts={alerts}
       oosOrders={oosOrders}
+      boc3={boc3}
+      rejectedInsurance={rejectedInsurance}
+      suspectSuccessors={suspectSuccessors}
     />
   );
 }
