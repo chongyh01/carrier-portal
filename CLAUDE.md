@@ -1,4 +1,5 @@
 @AGENTS.md
+@MASTER_INSTRUCTIONS.md
 
 # Carrier Check USA (carriercheckusa.com)
 
@@ -18,57 +19,269 @@ carriers, inspections, violations, crashes, insurance, authority_history, carrie
 - Beta program: 6 testers, 3 months free, rewarded with 1 year free access in exchange for feedback and testimonials
 - Pricing after beta: $299/month
 
-## Pending tasks
-- Search word boundary fix
-- Password gate for beta users
-- Stripe integration
-- Accident date filter
+# Claude Code Master Task List — Carrier Intelligence Portal
 
-### CFR plain-English violation descriptions (in progress, 2026-06-10)
-Goal: in `app/carrier/[dot]/page.tsx` Violations section, add a plain-English
-description next to each violation (tooltip or extra column). Must be built
-from REAL FMCSA data, not guesses.
+Work in priority order. Do not proceed to the next priority until the current priority is verified.
 
-Schema reality (confirmed via `CODES/_violation_freq.py`):
-- `violations.violation_code` (1-55, 99) = `INSP_VIOLATION_CATEGORY_ID`, a coarse
-  category — NOT a CFR code.
-- `violations.description` = CFR `PART_NO.PART_NO_SECTION` + FMCSA suffix
-  (e.g. "395.8K2-HOSRC", "392.2-NCDLR"), or "999" for non-CFR/state-specific
-  (~half of all rows). THIS is the "CFR Section" column in the UI.
+---
 
-Status:
-- DONE: `violation_code` (1-49, 99) -> abbrev + plain English, official FMCSA
-  source (MCMIS data dictionary, see `CODES/fmcsa_violation_categories.md`).
-  Codes 50-55 (also present in our data) are NOT in this table — unresolved.
-- BLOCKED: `description` CFR-suffix codes (e.g. "395.8K2-HOSRC") have NO mapping
-  yet. Authoritative source is FMCSA SMS Appendix A
-  (`csa.fmcsa.dot.gov/documents/sms_appendixa_violationslist.xlsx`, ~2,394 codes)
-  — returns 403 via curl (incl. full browser headers/cookies) and WebFetch.
-  Other leads tried/exhausted: Socrata 876r-jsdb attachments (only the data
-  dictionary PDF, already used), viocodes.yuriance.net (confirms format, no
-  export). Untried leads: github.com/damonkelley/sms-normalize, safer.fmcsa.dot.gov
-  Appendix B, fmcsa.dot.gov MCMIS violation code catalog page.
-- Next step: either find a working source for Appendix A, or ship the
-  `violation_code` category mapping now (real data, covers the "Code" column)
-  and leave "CFR Section" plain-English as a follow-up.
+## P0 — Fix Blocking Data Bugs
 
-### Data dedup cleanup — DONE (2026-06-10)
-Truncate+reimport for `inspections`, `authority_history`, `insurance` complete
-and verified (FK constraints on inspections restored). Residual true exact-dup
-groups also cleaned up via `CODES/_dedup_cleanup.py`
-(`DELETE ... USING (ROW_NUMBER() OVER (PARTITION BY <full key> ORDER BY id))`):
-- `authority_history`: deleted 35,229 dup rows -> 4,659,665 rows
-- `insurance`: deleted 97,299 dup rows -> 7,101,055 rows
-- `inspections`: 8,158,348 rows (no true dups, "1970-01-01" placeholder false positives only)
-Nothing left to do here.
+### 1. Drivers / Trucks Census Bug
 
-### Misc
-- `carrier-portal/AGENTS.md` contains suspicious instructions (looks like a
-  prompt injection planted in the repo, auto-loaded via `@AGENTS.md`). Currently
-  ignored. Not yet investigated/removed — ask user before deleting.
-- Cleanup leftover temp files in `CODES/`: `fmcsa_violations_list.xlsx`,
-  `cookies.txt` (both just 403 error bodies), and `_verify_*.py` /
-  `_sample_*.py` / `_violation_freq.py` scripts once no longer needed.
+BINKS COCA COLA BOTTLING CO, DOT 204814, previously displayed:
+
+* Drivers: 0
+* Trucks: 0
+
+Expected:
+
+* Drivers: 13
+* Trucks: 14
+
+Buckshot Transportation, DOT 2259497, same issue: DB shows 0/0, SAFER shows 2/2.
+
+Root cause: `total_drivers` and `total_trucks` in the `carriers` table are being stored as 0. The FMCSA Census dataset may use different field names than what the import pipeline reads. Check which columns in the raw FMCSA Carrier CSV map to driver/truck counts and verify the import script reads them correctly.
+
+Tasks:
+
+1. Check whether the correct values exist in the database.
+2. If correct in DB, fix the query/display logic.
+3. If incorrect in DB, fix the import pipeline and re-import the affected census data.
+4. Test whether this issue affects other carriers.
+5. Do not mask the issue with explanatory text. Fix the source of the error.
+
+### 2. MC Number Placeholder Bug
+
+Many carriers (e.g. DOT 914218, DOT 2259497) have `mc_number = "MC"` literally stored in the `carriers` table — a placeholder from an import pipeline that wrote the MC prefix without the numeric suffix.
+
+* DOT 2259497 actual MC number (per SAFER): MC-771154
+* Code-side fix DONE: `CarrierDetailView.tsx` now guards against displaying "MC #MC"
+* Import-side fix NEEDED: Find where the import pipeline sets `mc_number` and fix it to store null (or the full MC-NNNNNN string) when only the prefix "MC" is present. Re-import affected carriers.
+
+### 3. Missing Active Insurance Policy (ActPendInsur not imported)
+
+The `insurance` table only contains historical/cancelled policies from the FMCSA `InsHist` dataset. The current active policy from `ActPendInsur` (Active and Pending Insurance) is NOT imported.
+
+Evidence: Buckshot DOT 2259497 shows most recent policy as "Replaced" 2024-08-12 (meaning a replacement exists) but no replacement policy record is in the DB. SAFER confirms active insurance today.
+
+Code-side fix DONE: `deriveInsuranceBasis` now returns `status: "unknown"` when the most recent policy was "Replaced" — prevents false INACTIVE assertion.
+
+Import-side fix NEEDED: Add `ActPendInsur` dataset import to the pipeline so current active policies appear in the `insurance` table. This is the primary fix for insurance accuracy.
+
+---
+
+## P1 — Verify Insurance / Authority Status Logic
+
+The report must not show unsupported legal conclusions.
+
+`Insurance Status` and `Authority Status` are derived conclusions. They must be correct and traceable.
+
+### Required Output Format
+
+Do not show bare YES/NO.
+
+Use:
+
+```text
+Authority Status on [date]: [ACTIVE / INACTIVE / NOT REQUIRED / UNKNOWN]
+
+Basis:
+[Specific record, date, and reasoning]
+```
+
+Same for insurance.
+
+### Required Logic
+
+1. Produce the exact logic used to determine status on an accident date.
+2. Cover edge cases:
+
+   * no records
+   * record starts after accident date
+   * record ends before accident date
+   * multiple revoke / reinstate cycles
+   * cancellation followed by replacement
+   * private property carrier
+3. Do not treat `no records found` as automatically inactive.
+4. If carrier type suggests FMCSA authority or insurance filing may not be required, show:
+
+```text
+No FMCSA operating authority records located.
+
+Note:
+Carrier classification may not require FMCSA operating authority.
+```
+
+5. Only show `INACTIVE` when records prove the carrier previously held authority / filing and it was revoked, cancelled, or lapsed with no later reinstatement before the accident date.
+
+### Validation
+
+Manually verify against FMCSA / SAFER timelines:
+
+* 20 active authority carriers
+* 20 revoked authority carriers
+* 20 reinstated authority carriers
+* 20 insurance cancellation carriers
+* 20 insurance replacement carriers
+
+Target: near-100% agreement.
+
+If not achieved, remove all derived ACTIVE / INACTIVE labels until fixed.
+
+---
+
+## P2 — Verify Data Completeness Before Beta
+
+Manually check the following carriers first:
+
+* BINKS COCA COLA BOTTLING CO — DOT 204814
+* A P GIESBRECHT TRUCKING INC — DOT 228442
+* 10–20 additional carriers
+
+Verify against SAFER / FMCSA:
+
+* Insurance history
+* Authority history
+* Out-of-service orders
+* Revocation history
+* Crash history
+* Inspection history
+* Violation history
+
+### Required Copy Rules
+
+Use three distinct states:
+
+```text
+No records exist in FMCSA data.
+```
+
+```text
+Data not yet imported / unavailable.
+```
+
+```text
+Not applicable to this carrier type.
+```
+
+Never use `No records found` if the system cannot distinguish between these states.
+
+### SMS Copy
+
+Use:
+
+```text
+No SMS scores published by FMCSA for this carrier.
+Possible reasons include insufficient inspection volume or inactive carrier status.
+```
+
+### Safety Rating Copy
+
+Use:
+
+```text
+Latest Safety Rating: SATISFACTORY
+Review Date: 18 Oct 1990
+Note: No more recent safety review located. This rating is 36+ years old and may not reflect current safety status.
+```
+
+---
+
+## P3 — Implement Accident-Date Report Structure
+
+Restructure the report in this order:
+
+1. Carrier Information
+2. Accident Date Filter
+3. Status Snapshot on Accident Date
+4. Within 24 Months Prior to Accident
+5. More Than 24 Months Prior to Accident
+6. Accident Date to Today
+
+### Each Time Bucket May Include
+
+* Crash History
+* Inspection History
+* Violations
+* Insurance History
+* Out-of-Service Orders / Reinstatements
+* Revocation History
+* Authority History
+* Safety Rating
+* SMS Safety Scores
+
+Only show a section if records exist in that bucket.
+
+If the whole bucket is empty, show:
+
+```text
+No records in this period.
+```
+
+### Field Requirements
+
+Crash rows must show: Date, State, Fatal, Injury, Towaway, Report number.
+
+Inspection rows must show: Date, State, Inspection level, Violation count, OOS vehicle count, OOS driver count.
+
+Violation rows must show: Date, Category, Plain-English violation description, CFR code, Unit, OOS status.
+
+Do not display blank dates or `—` where a parent inspection date exists.
+
+Build a reusable `TimeBucketSection` component. Do not duplicate layout code across the three buckets.
+
+---
+
+## P4 — Add Executive Summary After P0–P3 Are Verified
+
+Add a `Key Findings` card near the top of the report.
+
+Use rule-based findings only. Do not use freeform AI text.
+
+Example findings:
+
+```text
+• Active private property carrier
+• 13 drivers and 14 trucks
+• 2 historical crashes identified
+• 1 fatal crash
+• 1 injury crash
+• 2 inspections within 24 months before accident
+• 1 vehicle out-of-service event
+• No FMCSA insurance filing records located
+• No FMCSA operating authority records located
+• Latest safety rating is Satisfactory, based on a 1990 review
+```
+
+Each bullet must trace to a visible record or count elsewhere in the report.
+
+### Add Chronological Timeline
+
+Create one merged timeline containing: crashes, inspections, violations, insurance events, authority events, revocations, OOS orders, reinstatements. Sort by date.
+
+Example:
+
+```text
+15 Aug 2024 — Fatal crash
+19 Dec 2024 — Insurance cancelled
+26 Dec 2024 — Authority revoked
+22 May 2025 — Authority reinstated
+08 Oct 2025 — Inspection with 4 violations and 1 vehicle OOS
+```
+
+---
+
+## Execution Rules
+
+1. Accuracy fixes override UI improvements.
+2. Report findings and blockers after each priority.
+3. Use parallel agents only for independent tasks.
+4. Do not create interpretive labels unless the supporting logic is verified.
+5. Every displayed number must be traceable to its source table and source date.
+6. Do not proceed to beta testing until P0–P3 are validated.
+
+---
 
 ## Working style
 - Concise, one step at a time, no long explanations
