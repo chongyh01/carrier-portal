@@ -694,10 +694,10 @@ function TimeBucketSection({
 // authority (MC number) and mandatory FMCSA insurance filings.
 function isLikelyPrivateCarrier(carrier: Carrier): boolean {
   const ct = (carrier.cargo_type ?? "").toUpperCase();
-  if (ct.includes("PRIVATE")) return true;
-  // No MC number and no authority history is a strong private-carrier signal
-  if (!carrier.mc_number) return true;
-  return false;
+  const hasNoMc = !carrier.mc_number || carrier.mc_number === "MC";
+  const isPrivate = ct.includes("PRIVATE PROPERTY") || ct.includes("PRIVATE PASSENGER");
+  const isApplyingForMc = ct.includes("APPLYING FOR MC");
+  return isPrivate && hasNoMc && !isApplyingForMc;
 }
 
 // ─── Derive insurance/authority status with auditable basis ──
@@ -752,14 +752,14 @@ function deriveInsuranceBasis(
   const policyRef = rec.policy_number ? `Policy ${rec.policy_number}` : "Policy on file";
 
   // "Replaced" means a successor policy exists — we just can't locate it in available records
-  if ((rec.status ?? "").toLowerCase() === "replaced" && cancel && cancel < accidentDate) {
+  if ((rec.status ?? "").toLowerCase() === "replaced" && cancel && cancel <= accidentDate) {
     return {
       status: "unknown",
       basis: `${policyRef} was replaced as of ${fmtDate(rec.cancellation_date)}. Replacement policy not located in available records — verify current insurance status directly with FMCSA.`,
     };
   }
 
-  if (cancel && cancel < accidentDate) {
+  if (cancel && cancel <= accidentDate) {
     const yearsGap = parseInt(accidentDate.slice(0, 4)) - parseInt(cancel.slice(0, 4));
     const longGap = yearsGap >= 3 ? ` Note: insurance lapsed ${yearsGap}+ years before accident date.` : "";
     return {
@@ -833,7 +833,7 @@ function deriveAuthorityBasis(
   const rev = dateOnly(rec.revocation_date);
   const authType = rec.authority_type ? `${rec.authority_type} authority` : "Authority";
 
-  if (rev && rev < accidentDate) {
+  if (rev && rev <= accidentDate) {
     const yearsGap = parseInt(accidentDate.slice(0, 4)) - parseInt(rev.slice(0, 4));
     const longGap = yearsGap >= 3 ? ` Note: authority lapsed ${yearsGap}+ years before accident date.` : "";
     return {
