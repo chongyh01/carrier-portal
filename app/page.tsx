@@ -34,10 +34,17 @@ const ALERT_THRESHOLD = 75;
 function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } {
   const isInactive = (carrier.status ?? "").toUpperCase() === "INACTIVE";
   const isActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
+  const scores     = [carrier.unsafe_driving_percentile, carrier.crash_indicator_percentile, carrier.driver_fitness_percentile, carrier.vehicle_maintenance_percentile].filter((v): v is number => v !== null && v !== undefined);
+  const smsAlerts  = scores.filter(s => s >= ALERT_THRESHOLD).length;
+  const hasFatal   = (carrier.fatal_crashes ?? 0) > 0;
+  const hasCrashes = (carrier.total_crashes ?? 0) > 0;
+
   if (isInactive && carrier.has_revocation) return { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" };
-  if (isActive   && carrier.has_revocation) return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
-  if (isActive)                              return { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" };
-  return                                            { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
+  if (smsAlerts >= 3 || hasFatal)           return { label: "HIGH RISK",             color: "#ef4444", bg: "#fef2f2" };
+  if (smsAlerts >= 1 || hasCrashes)         return { label: "ELEVATED",              color: "#f97316", bg: "#fff7ed" };
+  if (isActive && carrier.has_revocation)   return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
+  if (isActive)                             return { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" };
+  return                                           { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
 }
 
 function ScoreBar({ label, value }: { label: string; value?: number }) {
