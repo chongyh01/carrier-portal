@@ -34,7 +34,7 @@
 | Missing inspection dates | Inspection table | Inspections with null inspection_date excluded from all time-bucket views (inRange returns false for null); data issue not yet diagnosed |
 | Raw CFR violation codes without plain-English description | Violations table | `cfrDescription()` now shows "description unavailable" label for unrecognised codes. Full fix: run `fetch_cfr_codes.py` (CODES/) → generates `cfr_descriptions.json` from `876r-jsdb` dataset → integrate JSON into `CFR_DESCRIPTIONS` lookup in CarrierDetailView.tsx |
 | `boc3` table missing entirely | Table never created or imported | BOC3 = process agent to serve legal papers on. Verified: table does not exist in Supabase. Need to: CREATE TABLE boc3 + import from FMCSA BOC3 dataset. High value for lawyers. |
-| `rejected_insurance` table missing entirely | Table never created or imported | Rejected insurance = FMCSA-rejected filings with explicit rejection reason (300-char field). Verified: table does not exist. Need to: CREATE TABLE rejected_insurance + import from Rejected dataset (13&14). Very high litigation value — shows carrier attempted insurance and was rejected. |
+| rejected_insurance.class_code field mapping | Loader used mod_col_3 for class_code but actual column is ins_class_code | Minor — rej_reasons (the litigation-critical field) is correctly mapped. Fix: update load_rejected_insurance in fmcsa_import.py: class_code ← ins_class_code (not mod_col_3) |
 | `carrier-portal/AGENTS.md` flagged as potential prompt injection | Repo root | Needs manual review before deletion — do not delete blindly |
 | reimport_insurance.py tuple-unpacking bug | Line 282: unpacked 3 values from 4-element DATASETS tuple | Fixed: `for name, dataset_id, default_total, _key in DATASETS` | 2026-06-19 |
 | SMS scores all null (0 rows) | FK constraint violation aborted all pages; single-transaction upsert with no pre-filter | `reimport_sms.py`: TRUNCATE + plain batch INSERT with row-by-row FK fallback. 8,727 rows inserted successfully. | 2026-06-19 |
@@ -64,6 +64,8 @@
 | Stale 1990-era safety ratings showing as current | No age warning | Amber ⚠ warning shown for ratings > 10 years old (already implemented in prior session) | 2026-06-19 |
 | Revocation History section frequently empty | No data in carrier_alerts | Section already hidden when empty (`bucketRevocations.length > 0` gate) | 2026-06-19 |
 | Accident date filter may not be live | Deploy timing concern | Verified in code: useState + onChange + TimeBucketSection props all correctly wired | 2026-06-19 |
+| `isLikelyPrivateCarrier()` too broad — triggered NOT_REQUIRED for "APPLYING FOR MC" carriers and any carrier with null MC# | `CarrierDetailView.tsx` | Logic didn't distinguish applying-for-MC from true private carriers. Fixed: NOT_REQUIRED only returned for explicit PRIVATE PROPERTY or PRIVATE PASSENGER cargo_type with no MC# AND not applying for MC | 2026-06-20 |
+| Boundary date bug — cancel/revocation date equal to accident date treated as ACTIVE instead of INACTIVE | `deriveInsuranceBasis` + `deriveAuthorityBasis` | Strict `< accidentDate` comparison excluded same-day cancellations/revocations. Fixed: changed to `<= accidentDate` in both functions | 2026-06-20 |
 
 ---
 
@@ -88,12 +90,18 @@ A carrier record must FAIL validation and show a visible warning if any of these
 - Insurance reimport: `CODES/reimport_insurance.py`
 - Carrier field backfill: `CODES/fix_mc_and_fleet.py`
 
-**Pipeline run status (as of 2026-06-19):**
+**Pipeline run status (as of 2026-06-20 ~20:05 SGT):**
 ```
-python fix_mc_and_fleet.py       # DONE 2026-06-19 — 1,122,316 carriers updated
-python reimport_insurance.py     # RUNNING 2026-06-19 — ~150 pages, ETA ~50min
-python reimport_sms.py           # DONE 2026-06-19 — 8,727 rows inserted
-python fetch_cfr_codes.py        # NOT YET RUN — run manually, then integrate JSON into UI
+python fix_mc_and_fleet.py              # DONE 2026-06-19 — 1,122,316 carriers updated
+python reimport_sms.py                  # DONE 2026-06-19 — 8,727 rows inserted
+python import_boc3_rejected.py          # DONE 2026-06-20 ~19:53 SGT — 54,944 BOC3 + 12,481 rejected_insurance
+python reimport_authority_parallel.py   # DONE 2026-06-20 ~08:39 SGT — 4,694,895 rows (all 5 workers)
+python dedup_authority_history.py       # DONE 2026-06-20 — ran successfully
+python reimport_insurance_parallel.py   # IN PROGRESS 2026-06-20 ~19:45 SGT — 5 workers, ~53% at last check (~20:03 SGT)
+python dedup_insurance.py               # PENDING — run after insurance reimport completes
+python reimport_revocation_parallel.py  # DONE 2026-06-20 ~20:02 SGT — 1,459,980 rows (all 5 workers)
+python dedup_carrier_alerts.py          # RUNNING 2026-06-20 ~20:05 SGT — carrier_alerts dedup in progress
+python fetch_cfr_codes.py               # NOT YET RUN — run manually, then integrate JSON into UI
 ```
 
 **To run CFR codes fetch (one-time, ~2 min):**
@@ -138,8 +146,71 @@ All abbreviations (OOS, BASIC, MCS-150, SMS, etc.) need a tooltip/hover plain-En
 
 ---
 
-## 9. Other Backlog (lower priority)
+## 9. P5 — Chameleon Carrier Detection (Post-Beta, High Differentiator)
+
+No competitor (Carrier411, RMIS, SAFER) surfaces this. A chameleon carrier shuts down after revocation and re-registers under a new DOT/MC to escape its safety record. Detecting this is uniquely valuable to lawyers.
+
+### Detection Signals (ranked by reliability)
+1. **Same physical address + new registration within 24 months of revocation** — most common pattern
+2. **Same phone number across DOTs** — very reliable, low false-positive rate
+3. **Same BOC3 process agent** — strong signal; same agent = often same underlying operation (data now imported)
+4. **Similar carrier name** — fuzzy match, higher false-positive rate; use as supporting signal only
+5. **Same insurance company + overlapping geography** — supporting signal only
+
+### Query Design (run only when carrier has a confirmed revocation)
+
+```sql
+-- Find potential successor carriers sharing address, phone, or BOC3 agent
+-- registered AFTER the revocation effective date
+SELECT DISTINCT
+  c2.dot_number,
+  c2.legal_name,
+  c2.mc_number,
+  c2.status,
+  ah2.effective_date AS first_authority_date,
+  CASE
+    WHEN LOWER(TRIM(c2.address)) = LOWER(TRIM(c1.address)) THEN 'Same address'
+    WHEN c2.phone = c1.phone                               THEN 'Same phone number'
+    ELSE 'Same BOC3 process agent'
+  END AS connection_type
+FROM carriers c1
+JOIN carriers c2
+  ON c2.dot_number != c1.dot_number
+  AND (
+    LOWER(TRIM(c2.address)) = LOWER(TRIM(c1.address))
+    OR (c1.phone IS NOT NULL AND LENGTH(c1.phone) > 7 AND c2.phone = c1.phone)
+    OR EXISTS (
+        SELECT 1 FROM boc3 b1
+        JOIN boc3 b2 ON b2.company_name = b1.company_name
+        WHERE b1.dot_number = c1.dot_number AND b2.dot_number = c2.dot_number
+    )
+  )
+JOIN authority_history ah2
+  ON ah2.dot_number = c2.dot_number
+  AND ah2.effective_date > $revocation_effective_date  -- registered after revocation
+  AND ah2.status ILIKE '%grant%'
+WHERE c1.dot_number = $dot_number
+ORDER BY ah2.effective_date
+LIMIT 10
+```
+
+### Implementation Plan
+1. Add `indexes`: `carriers(address)`, `carriers(phone)`, `boc3(company_name, dot_number)` — required for performance on 4.4M rows
+2. New fetch function `fetchSuspectSuccessors(dot, revocationDate)` in `page.tsx` — only called when revocation detected
+3. New UI section in `CarrierDetailView.tsx`: "Possible Successor Entities" — amber warning card listing matches with connection type
+4. Each result links to the other carrier's report page
+5. Add disclaimer: "These are investigative leads, not confirmed conclusions. Independent verification required."
+
+### Prerequisite
+- Reimport revocation + authority history with clean dedup first (21,311 dup groups in authority_history must be resolved)
+- Add DB indexes before running the cross-carrier query in production (4.4M row table scan without index = timeout)
+
+---
+
+## 10. Other Backlog (lower priority)
+- **BOC3 + rejected_insurance UI sections** — data imported (53,158 + 12,481 rows) but not yet shown in carrier report. Build next session.
+- **Revocation + authority history reimport** — not reimported this session; original import from ~2026-06-10. Should rerun: `python fmcsa_import.py --mode initial --only revocation_history authority_history`
 - Authority history dedup: 21,311 dup groups (import-level fix needed).
 - Insurance dedup: 63,621 dup groups (import-level fix needed; component-level dedup is a stopgap).
 - Supabase compute downgrade Small → Micro/Nano (already initiated).
-- Stripe integration (deprioritized; pricing: solo ~$199/mo, small firm ~$399/mo, large firm ~$799/mo).
+- Stripe integration (deprioritized; pricing: solo ~$199/mo, small firm ~$399/mo, large firm ~$799/mon).
