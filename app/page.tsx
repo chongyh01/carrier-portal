@@ -26,25 +26,18 @@ type Carrier = {
   vehicle_maintenance_percentile?: number;
   total_crashes?: number;
   fatal_crashes?: number;
+  has_revocation?: boolean;
 };
 
 const ALERT_THRESHOLD = 75;
 
 function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } {
-  const scores = [
-    carrier.unsafe_driving_percentile,
-    carrier.crash_indicator_percentile,
-    carrier.driver_fitness_percentile,
-    carrier.vehicle_maintenance_percentile,
-  ].filter((v) => v !== null && v !== undefined) as number[];
-
-  const smsAlerts = scores.filter((s) => s >= ALERT_THRESHOLD).length;
-  const hasFatal = (carrier.fatal_crashes ?? 0) > 0;
-  const hasCrashes = (carrier.total_crashes ?? 0) > 0;
-
-  if (smsAlerts >= 3 || hasFatal) return { label: "HIGH RISK", color: "#ef4444", bg: "#fef2f2" };
-  if (smsAlerts >= 1 || hasCrashes) return { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" };
-  return { label: "CLEAR", color: "#22c55e", bg: "#f0fdf4" };
+  const isInactive = (carrier.status ?? "").toUpperCase() === "INACTIVE";
+  const isActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
+  if (isInactive && carrier.has_revocation) return { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" };
+  if (isActive   && carrier.has_revocation) return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
+  if (isActive)                              return { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" };
+  return                                            { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
 }
 
 function ScoreBar({ label, value }: { label: string; value?: number }) {
@@ -96,13 +89,17 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
 
   const dots = carriers.map((c) => c.dot_number).join(',');
 
-  const [smsRes, crashRes] = await Promise.all([
+  const [smsRes, crashRes, revRes] = await Promise.all([
     fetch(
       `${SUPABASE_URL}/rest/v1/sms_scores?select=dot_number,unsafe_driving,crash_indicator,driver_fitness,controlled_substances_alcohol,vehicle_maintenance&dot_number=in.(${dots})&order=score_date.desc`,
       { headers: HEADERS }
     ),
     fetch(
       `${SUPABASE_URL}/rest/v1/crashes?select=dot_number,fatal&dot_number=in.(${dots})`,
+      { headers: HEADERS }
+    ),
+    fetch(
+      `${SUPABASE_URL}/rest/v1/carrier_alerts?select=dot_number&event_type=eq.INVOLUNTARY_REVOCATION&dot_number=in.(${dots})&limit=500`,
       { headers: HEADERS }
     ),
   ]);
@@ -124,6 +121,11 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
     }
   }
 
+  const revocationSet = new Set<string>();
+  if (revRes.ok) {
+    for (const r of await revRes.json()) revocationSet.add(r.dot_number);
+  }
+
   return carriers.map((c) => {
     const sms = smsMap.get(c.dot_number);
     const crash = crashMap.get(c.dot_number);
@@ -136,6 +138,7 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
       vehicle_maintenance_percentile: sms?.vehicle_maintenance ?? undefined,
       total_crashes: crash?.total,
       fatal_crashes: crash?.fatal,
+      has_revocation: revocationSet.has(c.dot_number),
     };
   });
 }
