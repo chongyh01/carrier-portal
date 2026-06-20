@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import cfrJson from "./cfr_descriptions.json";
+import KeyFindings from "./KeyFindings";
+import CarrierTimeline from "./CarrierTimeline";
 import type {
   Carrier,
   SmsScores,
@@ -798,8 +800,11 @@ function deriveAuthorityBasis(
   // INVOL REV rows: effective_date = when revocation started,
   // revocation_date = when it was discontinued (reinstated).
   // If eff <= accidentDate AND (rev is null OR rev > accidentDate) → active revocation.
+  // Skip "DISCONTINUED REVOCATION" records — these mean the revocation was reversed and
+  // the carrier's authority was NOT actually lapsed.
   const activeInvolRev = authorityHistory.find(a => {
     if (!(a.status ?? "").toUpperCase().includes("INVOLUNTARY")) return false;
+    if ((a.reason ?? "").toUpperCase().includes("DISCONTINUED")) return false;
     const eff = dateOnly(a.effective_date);
     const rev = dateOnly(a.revocation_date);
     if (!eff || eff > accidentDate) return false;
@@ -919,6 +924,9 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     });
   })();
 
+  const authorityDataGap = !!carrier.mc_number && carrier.mc_number !== "MC" && authorityHistory.length === 0;
+  const insuranceDataGap = !!carrier.mc_number && carrier.mc_number !== "MC" && dedupedInsurance.length === 0;
+
   const insuranceDerived  = accidentDate ? deriveInsuranceBasis(dedupedInsurance, accidentDate, carrier)  : null;
   const authorityDerived  = accidentDate ? deriveAuthorityBasis(authorityHistory, accidentDate, carrier) : null;
   const insuranceActiveAtDate = insuranceDerived?.status === "active";
@@ -1037,6 +1045,18 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             />
           </label>
 
+          <KeyFindings
+            carrier={carrier}
+            sms={sms}
+            crashes={cleanedCrashes}
+            inspections={inspections}
+            insurance={dedupedInsurance}
+            authorityHistory={authorityHistory}
+            alerts={alerts}
+            oosOrders={oosOrders}
+            accidentDate={accidentDate}
+          />
+
           {accidentDate && insuranceDerived && authorityDerived && (
             <>
             <div style={{ display: "flex", gap: "16px", marginTop: "20px", flexWrap: "wrap" }}>
@@ -1075,6 +1095,19 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                 );
               })()}
             </div>
+            {(insuranceDataGap || authorityDataGap) && (
+              <div style={{ marginTop: "16px", background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: "8px", padding: "12px 16px" }}>
+                <p style={{ color: "#92400e", fontSize: "13px", margin: 0, lineHeight: "1.5" }}>
+                  <strong>⚠ Data Gap Warning:</strong>{" "}
+                  {insuranceDataGap && authorityDataGap
+                    ? `No insurance or authority records found in our database for MC#${carrier.mc_number}.`
+                    : insuranceDataGap
+                    ? `No insurance records found in our database for MC#${carrier.mc_number}.`
+                    : `No authority records found in our database for MC#${carrier.mc_number}.`}{" "}
+                  This may reflect an incomplete data import rather than confirmed absence of coverage. Verify directly with FMCSA SAFER before relying on this status.
+                </p>
+              </div>
+            )}
             {authorityActiveAtDate && (insuranceDerived.status === "inactive" || insuranceDerived.status === "unknown") && (
               <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
                 <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
@@ -1132,7 +1165,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "2px solid #fca5a5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
             <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", marginBottom: "6px" }}>⚠ Possible Successor / Related Entities</h2>
             <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
-              The following carriers share the same address or phone number as this carrier. If this carrier has a history of revocation, these may be successor entities operating under a new DOT number. These are investigative leads — independent verification required.
+              The following carriers share the same address, phone number, or BOC-3 process agent as this carrier. If this carrier has a history of revocation, these may be successor entities operating under a new DOT number. These are investigative leads, not confirmed conclusions. Independent verification required.
             </p>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
@@ -1174,6 +1207,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             </p>
             {boc3.map((agent, i) => (
               <div key={i} style={{ padding: "12px 0", borderBottom: i < boc3.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Serve legal papers on</p>
                 <p style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a", marginBottom: "4px" }}>{agent.company_name ?? "—"}</p>
                 {agent.attention_to && <p style={{ fontSize: "12px", color: "#64748b" }}>Attn: {agent.attention_to}</p>}
                 <p style={{ fontSize: "12px", color: "#64748b" }}>
@@ -1218,6 +1252,18 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA Rejected Insurance Filings</p>
           </div>
         )}
+
+        <CarrierTimeline
+          carrier={carrier}
+          crashes={cleanedCrashes}
+          inspections={inspections}
+          violations={violations}
+          insurance={dedupedInsurance}
+          authorityHistory={authorityHistory}
+          alerts={alerts}
+          oosOrders={oosOrders}
+          accidentDate={accidentDate}
+        />
 
         {/* Required disclaimer */}
         <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textAlign: "center", marginTop: "32px", lineHeight: "1.6" }}>
