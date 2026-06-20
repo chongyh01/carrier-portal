@@ -213,6 +213,20 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
     }
   }
 
+  // Populate first_authority_date for each suspect
+  for (const [dotNum, succ] of results.entries()) {
+    const authRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/authority_history?dot_number=eq.${dotNum}&status=ilike.*GRANT*&select=effective_date&order=effective_date.asc&limit=1`,
+      { headers: HEADERS, cache: 'no-store' }
+    );
+    if (authRes.ok) {
+      const authData: Array<{ effective_date: string }> = await authRes.json();
+      if (authData.length > 0) {
+        results.set(dotNum, { ...succ, first_authority_date: authData[0].effective_date });
+      }
+    }
+  }
+
   return Array.from(results.values()).slice(0, 20);
 }
 
