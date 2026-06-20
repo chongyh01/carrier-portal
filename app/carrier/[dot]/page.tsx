@@ -145,9 +145,9 @@ async function fetchRejectedInsurance(dot: string): Promise<RejectedInsurance[]>
 }
 
 async function fetchSuspectSuccessors(dot: string, address?: string, phone?: string): Promise<SuspectSuccessor[]> {
-  if (!address && !phone) return [];
-  // Find carriers sharing address or phone, excluding the current carrier
-  const filters: string[] = [`dot_number=neq.${dot}`];
+  const results: Map<string, SuspectSuccessor> = new Map();
+
+  // --- 1. Address and phone matches ---
   const orParts: string[] = [];
   if (address && address.trim().length > 5) {
     orParts.push(`address=ilike.${encodeURIComponent(address.trim())}`);
@@ -155,17 +155,65 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
   if (phone && phone.replace(/\D/g, '').length > 7) {
     orParts.push(`phone=eq.${encodeURIComponent(phone.trim())}`);
   }
-  if (orParts.length === 0) return [];
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&${filters.join('&')}&or=(${orParts.join(',')})&limit=10`,
+  if (orParts.length > 0) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&dot_number=neq.${dot}&or=(${orParts.join(',')})&limit=20`,
+      { headers: HEADERS, cache: 'no-store' }
+    );
+    if (res.ok) {
+      const data: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await res.json();
+      for (const c of data) {
+        if (!results.has(c.dot_number)) {
+          // Address takes priority in labelling; phone-only if no address filter
+          const connectionType = address && address.trim().length > 5
+            ? 'Same address'
+            : 'Same phone number';
+          results.set(c.dot_number, { ...c, connection_type: connectionType });
+        }
+      }
+    }
+  }
+
+  // --- 2. BOC3 process agent matches ---
+  // Fetch this carrier's BOC3 agents
+  const boc3Res = await fetch(
+    `${SUPABASE_URL}/rest/v1/boc3?select=company_name&dot_number=eq.${dot}&company_name=not.is.null&limit=5`,
     { headers: HEADERS, cache: 'no-store' }
   );
-  if (!res.ok) return [];
-  const data: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await res.json();
-  return data.map(c => ({
-    ...c,
-    connection_type: address && c.dot_number ? 'Same address' : 'Same phone number',
-  }));
+  if (boc3Res.ok) {
+    const myBoc3: Array<{ company_name: string }> = await boc3Res.json();
+    const myAgents = myBoc3.map(b => b.company_name).filter(Boolean);
+    if (myAgents.length > 0) {
+      // Find other DOTs sharing the same BOC3 agent
+      const agentFilter = myAgents.map(a => `company_name=eq.${encodeURIComponent(a)}`).join(',');
+      const sharedRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/boc3?select=dot_number&dot_number=neq.${dot}&or=(${agentFilter})&limit=50`,
+        { headers: HEADERS, cache: 'no-store' }
+      );
+      if (sharedRes.ok) {
+        const sharedAgents: Array<{ dot_number: string }> = await sharedRes.json();
+        const boc3DotNumbers = [...new Set(sharedAgents.map(b => b.dot_number))].filter(d => !results.has(d));
+        if (boc3DotNumbers.length > 0) {
+          // Batch fetch carrier details for these DOTs
+          const dotFilter = boc3DotNumbers.slice(0, 30).map(d => `dot_number=eq.${d}`).join(',');
+          const carriersRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&or=(${dotFilter})&limit=30`,
+            { headers: HEADERS, cache: 'no-store' }
+          );
+          if (carriersRes.ok) {
+            const boc3Carriers: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await carriersRes.json();
+            for (const c of boc3Carriers) {
+              if (!results.has(c.dot_number)) {
+                results.set(c.dot_number, { ...c, connection_type: 'Same process agent (BOC-3)' });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(results.values()).slice(0, 20);
 }
 
 export default async function CarrierDetailPage({ params }: { params: Promise<{ dot: string }> }) {
