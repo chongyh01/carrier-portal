@@ -960,13 +960,17 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   const isCarrierActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
   const smsAlerts  = [sms?.unsafe_driving_alert, sms?.crash_indicator_alert, sms?.driver_fitness_alert, sms?.vehicle_maintenance_alert].filter(Boolean).length;
   const totalFatal = cleanedCrashes.reduce((s, c) => s + (c.fatal ?? 0), 0);
+  // When accident date is set, factor in derived authority/insurance status
+  const authLapsed = accidentDate ? authorityDerived?.status === "inactive" : false;
+  const insLapsed  = accidentDate ? insuranceDerived?.status === "inactive"  : false;
+  const lapsedCount = (authLapsed ? 1 : 0) + (insLapsed ? 1 : 0);
   const risk =
-    isCarrierInactive && hasAnyRealRevocation ? { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" }
-    : smsAlerts >= 3 || totalFatal > 0        ? { label: "HIGH RISK",             color: "#ef4444", bg: "#fef2f2" }
-    : smsAlerts >= 1 || cleanedCrashes.length > 0 ? { label: "ELEVATED",         color: "#f97316", bg: "#fff7ed" }
-    : isCarrierActive && hasAnyRealRevocation  ? { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" }
-    : isCarrierActive                          ? { label: "CLEAR",                color: "#22c55e", bg: "#f0fdf4" }
-    :                                            { label: "INACTIVE",             color: "#64748b", bg: "#f8fafc" };
+    isCarrierInactive && hasAnyRealRevocation     ? { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" }
+    : smsAlerts >= 3 || totalFatal > 0 || lapsedCount === 2 ? { label: "HIGH RISK",   color: "#ef4444", bg: "#fef2f2" }
+    : smsAlerts >= 1 || cleanedCrashes.length > 0 || lapsedCount >= 1 ? { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" }
+    : isCarrierActive && hasAnyRealRevocation     ? { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" }
+    : isCarrierActive                             ? { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" }
+    :                                               { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
 
   // Bucket boundaries
   let cutoff24     = "";
