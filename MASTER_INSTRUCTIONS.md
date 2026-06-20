@@ -27,19 +27,11 @@
 ### Open
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
-| Active insurance policies missing entirely | Insurance history + status card | ActPendInsur (ypjt-5ydn) was never imported — `load_insurance` reads `dot_number` which that dataset doesn't have. Fixed in `fmcsa_import.py` with new `load_insurance_active`; **data fix requires running `fix_mc_and_fleet.py` then `reimport_insurance.py`** |
-| Driver/truck counts wrong (0 for active carriers) | Carrier detail page | `carriers` table has 0/0 — bad initial import. **Fix: run `fix_mc_and_fleet.py`** |
-| mc_number still "MC" in database | carriers table | Import pipeline stored prefix without numeric suffix. **Fix: run `fix_mc_and_fleet.py`** (code display guard already done) |
-| Raw CFR violation codes shown without translation | Violations table | FMCSA Appendix A xlsx returns 403 — source not yet found |
 | Missing inspection dates | Inspection table | Inspections with null inspection_date excluded from all time-bucket views (inRange returns false for null); data issue not yet diagnosed |
-| Raw CFR violation codes without plain-English description | Violations table | `cfrDescription()` now shows "description unavailable" label for unrecognised codes. Full fix: run `fetch_cfr_codes.py` (CODES/) → generates `cfr_descriptions.json` from `876r-jsdb` dataset → integrate JSON into `CFR_DESCRIPTIONS` lookup in CarrierDetailView.tsx |
-| `boc3` table missing entirely | Table never created or imported | BOC3 = process agent to serve legal papers on. Verified: table does not exist in Supabase. Need to: CREATE TABLE boc3 + import from FMCSA BOC3 dataset. High value for lawyers. |
 | rejected_insurance.class_code field mapping | Loader used mod_col_3 for class_code but actual column is ins_class_code | Minor — rej_reasons (the litigation-critical field) is correctly mapped. Fix: update load_rejected_insurance in fmcsa_import.py: class_code ← ins_class_code (not mod_col_3) |
 | `carrier-portal/AGENTS.md` flagged as potential prompt injection | Repo root | Needs manual review before deletion — do not delete blindly |
-| reimport_insurance.py tuple-unpacking bug | Line 282: unpacked 3 values from 4-element DATASETS tuple | Fixed: `for name, dataset_id, default_total, _key in DATASETS` | 2026-06-19 |
-| SMS scores all null (0 rows) | FK constraint violation aborted all pages; single-transaction upsert with no pre-filter | `reimport_sms.py`: TRUNCATE + plain batch INSERT with row-by-row FK fallback. 8,727 rows inserted successfully. | 2026-06-19 |
-| SMS import missing crash_ind_pct / hazmat_pct | Socrata dataset m3ry-qcip does not include crash indicator or hazmat percentiles | Removed from SCORE_MAP. Only 5 BASIC categories available in this dataset. | 2026-06-19 |
-| FMCSA disclaimer missing from report | Never added | Added to bottom of CarrierDetailView.tsx: "Data sourced from FMCSA public records. This report is for informational purposes only and does not constitute legal advice." | 2026-06-19 |
+| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | Not yet diagnosed; violations show without inspection link |
+| CFR code key format mismatch in some codes | cfr_descriptions.json has duplicate keys ('398.8D1-MW' vs '398.8D1-mw') — JS keeps last value, minor | Deduplication needed in cfr_descriptions.json |
 
 ### Fixed
 | Issue | Root Cause | Fix | Date |
@@ -66,6 +58,17 @@
 | Accident date filter may not be live | Deploy timing concern | Verified in code: useState + onChange + TimeBucketSection props all correctly wired | 2026-06-19 |
 | `isLikelyPrivateCarrier()` too broad — triggered NOT_REQUIRED for "APPLYING FOR MC" carriers and any carrier with null MC# | `CarrierDetailView.tsx` | Logic didn't distinguish applying-for-MC from true private carriers. Fixed: NOT_REQUIRED only returned for explicit PRIVATE PROPERTY or PRIVATE PASSENGER cargo_type with no MC# AND not applying for MC | 2026-06-20 |
 | Boundary date bug — cancel/revocation date equal to accident date treated as ACTIVE instead of INACTIVE | `deriveInsuranceBasis` + `deriveAuthorityBasis` | Strict `< accidentDate` comparison excluded same-day cancellations/revocations. Fixed: changed to `<= accidentDate` in both functions | 2026-06-20 |
+| Active insurance policies missing entirely | `reimport_insurance_parallel.py` | ActPendInsur imported: ~478K active policies across 5 workers. Script now uses `load_insurance_active` with docket→DOT mapping | 2026-06-20 |
+| Driver/truck counts wrong (0 for active carriers) | `fix_mc_and_fleet.py` | Ran 2026-06-19, 1,122,316 carriers updated with correct driver/truck counts | 2026-06-19 |
+| mc_number still "MC" in database | `fix_mc_and_fleet.py` | Same run above fixed mc_number storage with correct zero-padded values | 2026-06-19 |
+| Raw CFR violation codes without plain-English description | `CarrierDetailView.tsx` + `fetch_cfr_codes.py` | cfr_descriptions.json generated from Socrata `876r-jsdb` dataset (2,365 codes); imported as `CFR_FULL` in component. 3-level fallback: exact → prefix → numeric | 2026-06-20 |
+| `boc3` table missing entirely | `import_boc3_rejected.py` | Table created and imported 54,944 rows; UI section "Serve legal papers on:" added to CarrierDetailView | 2026-06-20 |
+| Status badge showing "CLEAR" for carriers with revocation history | `CarrierDetailView.tsx` | Badge only checked crash count + SMS alerts, never authority_history or carrier_alerts. Fixed: badge now checks revocations. REVOKED (red) / ACTIVE-PRIOR HISTORY (amber) / CLEAR (green). ~1M carriers corrected | 2026-06-20 |
+| DISCONTINUED REVOCATION triggering false INACTIVE | `deriveAuthorityBasis` | DISCONTINUED = revocation was reversed; skip these when determining active revocations | 2026-06-20 |
+| Chameleon query ran on all carriers | `page.tsx` | Added `if revocations.length > 0` guard; query now only runs when carrier has confirmed revocation | 2026-06-20 |
+| Chameleon connection_type always "Same address" | `page.tsx` | Split into two separate queries (address + phone); BOC3 cross-reference added as 3rd query | 2026-06-20 |
+| `first_authority_date` missing on suspect successors | `page.tsx` | fetchSuspectSuccessors now populates first_authority_date from authority_history | 2026-06-20 |
+| DATA_GAP warning missing for for-hire carriers with 0 records | `CarrierDetailView.tsx` | Added amber warning when MC number exists but 0 authority or insurance records found | 2026-06-20 |
 
 ---
 
@@ -90,26 +93,27 @@ A carrier record must FAIL validation and show a visible warning if any of these
 - Insurance reimport: `CODES/reimport_insurance.py`
 - Carrier field backfill: `CODES/fix_mc_and_fleet.py`
 
-**Pipeline run status (as of 2026-06-20 ~20:05 SGT):**
+**Pipeline run status (FULLY COMPLETE as of 2026-06-20 SGT):**
 ```
 python fix_mc_and_fleet.py              # DONE 2026-06-19 — 1,122,316 carriers updated
 python reimport_sms.py                  # DONE 2026-06-19 — 8,727 rows inserted
 python import_boc3_rejected.py          # DONE 2026-06-20 ~19:53 SGT — 54,944 BOC3 + 12,481 rejected_insurance
-python reimport_authority_parallel.py   # DONE 2026-06-20 ~08:39 SGT — 4,694,895 rows (all 5 workers)
-python dedup_authority_history.py       # DONE 2026-06-20 — ran successfully
-python reimport_insurance_parallel.py   # IN PROGRESS 2026-06-20 ~19:45 SGT — 5 workers, ~53% at last check (~20:03 SGT)
-python dedup_insurance.py               # PENDING — run after insurance reimport completes
-python reimport_revocation_parallel.py  # DONE 2026-06-20 ~20:02 SGT — 1,459,980 rows (all 5 workers)
-python dedup_carrier_alerts.py          # RUNNING 2026-06-20 ~20:05 SGT — carrier_alerts dedup in progress
-python fetch_cfr_codes.py               # NOT YET RUN — run manually, then integrate JSON into UI
+python reimport_authority_parallel.py   # DONE 2026-06-20 ~08:39 SGT — 4,694,895 rows (all 5 workers); dedup removed 195,845 dupes
+python reimport_insurance_parallel.py   # DONE 2026-06-20 ~20:28 SGT — InsHist + ActPendInsur, all 5 workers; 0 dupes found, unique index created
+python reimport_revocation_parallel.py  # DONE 2026-06-20 ~20:02 SGT — 1,459,980 rows (all 5 workers); 0 dupes found
+python dedup_carrier_alerts.py          # DONE 2026-06-20 — 0 dupes found, 1,360,690 INVOLUNTARY_REVOCATION rows clean
+python fetch_cfr_codes.py               # DONE 2026-06-20 — cfr_descriptions.json generated (2,365 codes) and integrated into CarrierDetailView.tsx
 ```
 
-**To run CFR codes fetch (one-time, ~2 min):**
-```
-cd CODES
-python fetch_cfr_codes.py        # generates cfr_descriptions.json
-# Then tell Claude to integrate it into CarrierDetailView.tsx CFR_DESCRIPTIONS
-```
+**Current DB row counts (verified 2026-06-20):**
+- carriers: ~4.4M
+- authority_history: 4,694,895 (after dedup)
+- insurance: ~7.65M
+- carrier_alerts: 1,360,690 INVOLUNTARY_REVOCATION + 780,668 OOS_ORDER
+- boc3: 54,944
+- rejected_insurance: 12,481
+- sms_scores: 8,727
+- crashes: 7,143,666 (after dedup)
 
 **ActPendInsur specifics:**
 - Dataset: `ypjt-5ydn`
@@ -208,9 +212,9 @@ LIMIT 10
 ---
 
 ## 10. Other Backlog (lower priority)
-- **BOC3 + rejected_insurance UI sections** — data imported (53,158 + 12,481 rows) but not yet shown in carrier report. Build next session.
-- **Revocation + authority history reimport** — not reimported this session; original import from ~2026-06-10. Should rerun: `python fmcsa_import.py --mode initial --only revocation_history authority_history`
-- Authority history dedup: 21,311 dup groups (import-level fix needed).
-- Insurance dedup: 63,621 dup groups (import-level fix needed; component-level dedup is a stopgap).
+- **Browser verification** — verify P4 (KeyFindings + CarrierTimeline + DATA_GAP), BOC3 section, chameleon section, new REVOKED/ACTIVE-PRIOR HISTORY badges in browser. Use test carriers: DOT 2259497 (Buckshot), DOT 204814 (BINKS), DOT 2293690 (Bob Hammer — should show REVOKED).
+- **SAFER manual spot-checks** — 5 carriers listed in Jun 20 session log (browser only).
+- **P5 Chameleon prerequisites**: All met (reimports done, indexes created). Can implement P5 after beta launch.
 - Supabase compute downgrade Small → Micro/Nano (already initiated).
 - Stripe integration (deprioritized; pricing: solo ~$199/mo, small firm ~$399/mo, large firm ~$799/mon).
+- `import_boc3_rejected.py` uses DROP TABLE — will wipe on every run. Fix: change to TRUNCATE before next use.
