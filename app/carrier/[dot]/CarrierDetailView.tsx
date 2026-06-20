@@ -736,9 +736,13 @@ function deriveInsuranceBasis(
       return eff !== null && eff <= accidentDate;
     })
     .sort((a, b) => {
-      const da = dateOnly(a.effective_date) ?? "";
-      const db = dateOnly(b.effective_date) ?? "";
-      return db.localeCompare(da);
+      const effA = dateOnly(a.effective_date) ?? "";
+      const effB = dateOnly(b.effective_date) ?? "";
+      if (effB !== effA) return effB.localeCompare(effA);
+      const canA = dateOnly(a.cancellation_date) ?? "";
+      const canB = dateOnly(b.cancellation_date) ?? "";
+      if (canB !== canA) return canB.localeCompare(canA);
+      return (b.imported_at ?? "").localeCompare(a.imported_at ?? "");
     });
 
   if (candidates.length === 0)
