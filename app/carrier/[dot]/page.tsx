@@ -150,7 +150,7 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
   // --- 1. Address and phone matches ---
   const orParts: string[] = [];
   if (address && address.trim().length > 5) {
-    orParts.push(`address=ilike.${encodeURIComponent(address.trim())}`);
+    orParts.push(`address=ilike.${encodeURIComponent('%' + address.trim() + '%')}`);
   }
   if (phone && phone.replace(/\D/g, '').length > 7) {
     orParts.push(`phone=eq.${encodeURIComponent(phone.trim())}`);
@@ -234,7 +234,11 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
 
   if (!carrier) notFound();
 
-  const suspectSuccessors = await fetchSuspectSuccessors(dot, carrier.address, carrier.phone);
+  // Only run chameleon detection for carriers with revocation history
+  const hasRevocation = alerts.some(a => a.event_type === 'INVOLUNTARY_REVOCATION');
+  const suspectSuccessors = hasRevocation
+    ? await fetchSuspectSuccessors(dot, carrier.address, carrier.phone)
+    : [];
 
   return (
     <CarrierDetailView
