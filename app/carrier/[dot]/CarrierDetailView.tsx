@@ -1658,37 +1658,82 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
         )}
 
         {/* Section — Rejected Insurance Filings */}
-        {rejectedInsurance.length > 0 && (
-          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #fecaca", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#991b1b", marginBottom: "6px" }}>Rejected Insurance Filings ({rejectedInsurance.length})</h2>
-            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
-              FMCSA rejected these insurance submissions. Each rejection indicates the carrier attempted to file insurance but FMCSA declined it — a significant finding for accident date coverage analysis.
+        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #fecaca", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#991b1b", marginBottom: "2px" }}>Rejected Insurance Filings — FMCSA refused these submissions</h2>
+          {rejectedInsurance.length > 0 && (
+            <p style={{ fontSize: "11px", color: "#6b7280", fontFamily: "'DM Mono', monospace", marginBottom: "14px" }}>
+              {rejectedInsurance.length} rejection{rejectedInsurance.length !== 1 ? "s" : ""} on record
             </p>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Received", "Rejected", "Insurer", "Policy #", "Rejection Reason"].map(h => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rejectedInsurance.map((r, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
-                      <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(r.received_date)}</td>
-                      <td style={{ padding: "8px 12px", color: "#ef4444", whiteSpace: "nowrap", fontWeight: 600 }}>{fmtDate(r.rejected_date)}</td>
-                      <td style={{ padding: "8px 12px", color: "#374151" }}>{r.company_name ?? "—"}</td>
-                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{r.policy_number ?? "—"}</td>
-                      <td style={{ padding: "8px 12px", color: "#7f1d1d", fontSize: "12px", lineHeight: "1.4" }}>{r.rejected_reason ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          )}
+          <p style={{ fontSize: "12px", color: "#374151", marginBottom: "16px", lineHeight: "1.6", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px" }}>
+            FMCSA rejected these insurance filings. Each rejection represents a period when the carrier attempted to file but failed to maintain required coverage.
+          </p>
+          {rejectedInsurance.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#6b7280" }}>No rejected insurance filings in FMCSA records.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {rejectedInsurance.map((r, i) => {
+                const rejDate = dateOnly(r.rejected_date);
+                const nearAccident = accidentDate && rejDate
+                  ? (() => {
+                      const accMs = new Date(accidentDate + "T00:00:00Z").getTime();
+                      const rejMs = new Date(rejDate + "T00:00:00Z").getTime();
+                      const diffDays = (accMs - rejMs) / (1000 * 60 * 60 * 24);
+                      return diffDays >= 0 && diffDays <= 90;
+                    })()
+                  : false;
+                return (
+                  <div key={i} style={{ border: "1px solid #fecaca", borderRadius: "8px", overflow: "hidden" }}>
+                    {nearAccident && (
+                      <div style={{ background: "#dc2626", color: "white", padding: "6px 14px", fontSize: "12px", fontWeight: 600 }}>
+                        ⚠ Rejected filing within 90 days of accident date
+                      </div>
+                    )}
+                    <div style={{ padding: "14px 16px", background: nearAccident ? "#fff5f5" : "#fafafa" }}>
+                      {/* Rejected date — prominent */}
+                      <div style={{ marginBottom: "10px" }}>
+                        <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Rejected Date</span>
+                        <div style={{ fontSize: "17px", fontWeight: 700, color: "#991b1b", marginTop: "2px" }}>{fmtDate(r.rejected_date)}</div>
+                      </div>
+                      {/* Rejection reason — callout box */}
+                      {r.rejected_reason ? (
+                        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "6px", padding: "10px 12px", marginBottom: "12px" }}>
+                          <div style={{ fontSize: "10px", color: "#7f1d1d", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Rejection Reason</div>
+                          <div style={{ fontSize: "13px", color: "#7f1d1d", fontWeight: 600, lineHeight: "1.5" }}>{r.rejected_reason}</div>
+                        </div>
+                      ) : (
+                        <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "10px 12px", marginBottom: "12px" }}>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Rejection Reason</div>
+                          <div style={{ fontSize: "13px", color: "#9ca3af" }}>Not recorded</div>
+                        </div>
+                      )}
+                      {/* Secondary fields */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "8px" }}>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Insurance Company</div>
+                          <div style={{ fontSize: "12px", color: "#374151", marginTop: "2px" }}>{r.company_name ?? "—"}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Policy Number</div>
+                          <div style={{ fontSize: "12px", color: "#374151", fontFamily: "'DM Mono', monospace", marginTop: "2px" }}>{r.policy_number ?? "—"}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Form Type</div>
+                          <div style={{ fontSize: "12px", color: "#374151", marginTop: "2px" }}>{insuranceTypeLabel(r.form_code)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Received by FMCSA</div>
+                          <div style={{ fontSize: "12px", color: "#374151", marginTop: "2px" }}>{fmtDate(r.received_date)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA Rejected Insurance Filings</p>
-          </div>
-        )}
+          )}
+          <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA Rejected Insurance Filings</p>
+        </div>
 
         <CarrierTimeline
           carrier={carrier}
