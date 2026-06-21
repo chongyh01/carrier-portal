@@ -353,9 +353,6 @@ function TimeBucketSection({
     bucketRevocations.length === 0 && bucketAuthority.length === 0 &&
     bucketInspections.length === 0 && !ratingInBucket && !smsInBucket;
 
-  const fatalCount  = bucketCrashes.reduce((sum, c) => sum + (c.fatal  ?? 0), 0);
-  const injuryCount = bucketCrashes.reduce((sum, c) => sum + (c.injury ?? 0), 0);
-
   const TH = ({ cols }: { cols: string[] }) => (
     <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
       {cols.map(h => (
@@ -389,46 +386,71 @@ function TimeBucketSection({
         ) : (
           <>
             {/* Crash History */}
-            {bucketCrashes.length > 0 && (
-              <>
-                <SubHeader title="Crash History" />
-                <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
-                  <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "10px 16px" }}>
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>TOTAL</p>
-                    <p style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a" }}>{bucketCrashes.length}</p>
+            {bucketCrashes.length > 0 && (() => {
+              const crashFatal   = bucketCrashes.reduce((sum, c) => sum + (c.fatal    ?? 0), 0);
+              const crashInjury  = bucketCrashes.reduce((sum, c) => sum + (c.injury   ?? 0), 0);
+              const crashTowaway = bucketCrashes.reduce((sum, c) => sum + (c.towaway  ?? 0), 0);
+              const crashStates  = [...new Set(bucketCrashes.map(c => c.state).filter((s): s is string => !!s))];
+              const n            = bucketCrashes.length;
+              const stateNote    = crashStates.length === 1
+                ? `All crashes in ${stateName(crashStates[0])}`
+                : crashStates.length > 1
+                  ? `Crashes across ${crashStates.length} states`
+                  : null;
+              return (
+                <>
+                  <SubHeader title="Crash History" />
+                  {/* Crash Summary Card */}
+                  <div style={{ background: crashFatal > 0 ? "#fef2f2" : "#f8fafc", border: `1px solid ${crashFatal > 0 ? "#fecaca" : "#e2e8f0"}`, borderRadius: "8px", padding: "10px 14px", marginBottom: "14px" }}>
+                    <p style={{ fontSize: "13px", color: "#374151", fontFamily: "'DM Mono', monospace", marginBottom: crashFatal > 0 || n >= 3 || stateNote ? "4px" : "0" }}>
+                      {n} crash{n !== 1 ? "es" : ""} · {crashFatal} fatal · {crashInjury} injury · {crashTowaway} towaway
+                    </p>
+                    {(crashFatal > 0 || n >= 3 || stateNote) && (
+                      <p style={{ fontSize: "12px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>
+                        {crashFatal > 0 && <span style={{ color: "#dc2626", fontWeight: 700, marginRight: "12px" }}>⚠ Fatal crash recorded in this period</span>}
+                        {n >= 3 && <span style={{ marginRight: "12px" }}>Pattern: {n} crashes in {label} — above single-incident threshold</span>}
+                        {stateNote && <span>{stateNote}</span>}
+                      </p>
+                    )}
                   </div>
-                  {fatalCount > 0 && (
-                    <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "10px 16px" }}>
-                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>FATAL</p>
-                      <p style={{ fontSize: "22px", fontWeight: 700, color: "#ef4444" }}>{fatalCount}</p>
+                  <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
+                    <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "10px 16px" }}>
+                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>TOTAL</p>
+                      <p style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a" }}>{bucketCrashes.length}</p>
                     </div>
-                  )}
-                  {injuryCount > 0 && (
-                    <div style={{ background: "#fff7ed", borderRadius: "8px", padding: "10px 16px" }}>
-                      <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>INJURY</p>
-                      <p style={{ fontSize: "22px", fontWeight: 700, color: "#f97316" }}>{injuryCount}</p>
-                    </div>
-                  )}
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                    <thead><TH cols={["Date", "State", "Fatal", "Injury", "Towaway", "Report #"]} /></thead>
-                    <tbody>
-                      {bucketCrashes.map((c, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: (c.fatal ?? 0) > 0 ? "#fef2f2" : "transparent" }}>
-                          <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(c.crash_date)}</td>
-                          <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(c.state)}</td>
-                          <td style={{ padding: "8px 12px", color: (c.fatal ?? 0) > 0 ? "#ef4444" : "#374151", fontWeight: (c.fatal ?? 0) > 0 ? 700 : 400 }}>{c.fatal}</td>
-                          <td style={{ padding: "8px 12px", color: (c.injury ?? 0) > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
-                          <td style={{ padding: "8px 12px", color: "#374151" }}>{c.towaway}</td>
-                          <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{c.report_number ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
+                    {crashFatal > 0 && (
+                      <div style={{ background: "#fef2f2", borderRadius: "8px", padding: "10px 16px" }}>
+                        <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>FATAL</p>
+                        <p style={{ fontSize: "22px", fontWeight: 700, color: "#ef4444" }}>{crashFatal}</p>
+                      </div>
+                    )}
+                    {crashInjury > 0 && (
+                      <div style={{ background: "#fff7ed", borderRadius: "8px", padding: "10px 16px" }}>
+                        <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px" }}>INJURY</p>
+                        <p style={{ fontSize: "22px", fontWeight: 700, color: "#f97316" }}>{crashInjury}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead><TH cols={["Date", "State", "Fatal", "Injury", "Towaway", "Report #"]} /></thead>
+                      <tbody>
+                        {bucketCrashes.map((c, i) => (
+                          <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: (c.fatal ?? 0) > 0 ? "#fef2f2" : "transparent" }}>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(c.crash_date)}</td>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(c.state)}</td>
+                            <td style={{ padding: "8px 12px", color: (c.fatal ?? 0) > 0 ? "#ef4444" : "#374151", fontWeight: (c.fatal ?? 0) > 0 ? 700 : 400 }}>{c.fatal}</td>
+                            <td style={{ padding: "8px 12px", color: (c.injury ?? 0) > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
+                            <td style={{ padding: "8px 12px", color: "#374151" }}>{c.towaway}</td>
+                            <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{c.report_number ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Violations */}
             {bucketViolations.length > 0 && (
