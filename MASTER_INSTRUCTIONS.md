@@ -27,7 +27,7 @@
 ### Open
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
-| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | No shared join key between violations and inspections tables — requires reimport with inspection linkage |
+| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | `backfill_inspection_id-V1.py` written; estimated 83.5% fill rate via dot_number join. Awaiting violations dedup completion before run. |
 
 ### Fixed
 | Issue | Root Cause | Fix | Date |
@@ -69,7 +69,7 @@
 | `import_boc3_rejected.py` DROP TABLE wiped data on every re-run | `import_boc3_rejected.py` | Changed to CREATE IF NOT EXISTS + TRUNCATE RESTART IDENTITY — preserves structure and indexes | 2026-06-22 |
 | `rejected_insurance.class_code` used wrong column `mod_col_3` | `fmcsa_import.py` + `import_boc3_rejected.py` | Both scripts already use `ins_class_code or mod_col_3` fallback — already fixed in code; data reimport not required | 2026-06-22 |
 | CFR code key format mismatch (398.8D1-MW vs 398.8D1-mw) | `cfr_descriptions.json` + `CarrierDetailView.tsx` | Removed lowercase duplicate from both JSON files; added `.toUpperCase()` fallback in `cfrDescription()` | 2026-06-22 |
-| Missing inspection dates — 8.1M rows with 1970-01-01 epoch placeholder | `reimport_inspections.py` + `safe_date()` | `pd.read_csv` without `dtype=str` inferred `insp_date` as integer; `pd.to_datetime(20230715)` = nanoseconds = 1970-01-01. Fix: `reimport_inspections_V2.py` forces `dtype=str` + uses `format="%Y%m%d"` for 8-digit strings. UI fix: "Undated Inspections" section added to `CarrierDetailView.tsx` shows non-compliant inspections excluded from time buckets. Pipeline reimport pending. | 2026-06-21 |
+| Missing inspection dates — 8.1M rows with 1970-01-01 epoch placeholder | `reimport_inspections.py` + `safe_date()` | `pd.read_csv` without `dtype=str` inferred `insp_date` as integer; `pd.to_datetime(20230715)` = nanoseconds = 1970-01-01. Fix: `reimport_inspections_V2.py` forces `dtype=str` + uses `format="%Y%m%d"` for 8-digit strings. UI fix: "Undated Inspections" section added to `CarrierDetailView.tsx` shows non-compliant inspections excluded from time buckets. Pipeline reimport IN PROGRESS (2026-06-22). | 2026-06-22 |
 
 ---
 
@@ -94,7 +94,7 @@ A carrier record must FAIL validation and show a visible warning if any of these
 - Insurance reimport: `CODES/reimport_insurance.py`
 - Carrier field backfill: `CODES/fix_mc_and_fleet.py`
 
-**Pipeline run status (FULLY COMPLETE as of 2026-06-20 SGT):**
+**Pipeline run status (core complete 2026-06-20; dedup + inspections reimport IN PROGRESS 2026-06-22 SGT):**
 ```
 python fix_mc_and_fleet.py              # DONE 2026-06-19 — 1,122,316 carriers updated
 python reimport_sms.py                  # DONE 2026-06-19 — 8,727 rows inserted
@@ -104,7 +104,11 @@ python reimport_insurance_parallel.py   # DONE 2026-06-20 ~20:28 SGT — InsHist
 python reimport_revocation_parallel.py  # DONE 2026-06-20 ~20:02 SGT — 1,459,980 rows (all 5 workers); 0 dupes found
 python dedup_carrier_alerts.py          # DONE 2026-06-20 — 0 dupes found, 1,360,690 INVOLUNTARY_REVOCATION rows clean
 python fetch_cfr_codes.py               # DONE 2026-06-20 — cfr_descriptions.json generated (2,365 codes) and integrated into CarrierDetailView.tsx
-python reimport_inspections_V2.py       # PENDING — fixes epoch date bug; pilot tested (1000 rows OK). Run to fix 8.1M rows.
+python validate_dedup-V1.py             # DONE 2026-06-22 — audit: violations 5.44M dupes, carrier_alerts 390K, authority_history 40K
+python dedup_violations.py             # IN PROGRESS 2026-06-22 — deleting 5.44M dupe violation rows (batched 50K)
+python dedup_carrier_alerts_V2.py      # IN PROGRESS 2026-06-22 — dedup carrier_alerts (390K dupes) and authority_history (40K dupes)
+python reimport_inspections_V2.py      # IN PROGRESS 2026-06-22 — fixes epoch date bug; pilot tested (1000 rows OK). Fixing 8.1M rows.
+python backfill_inspection_id-V1.py    # READY TO RUN — awaiting violations dedup completion. 83.5% estimated fill rate.
 ```
 
 **Current DB row counts (verified 2026-06-20):**
