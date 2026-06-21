@@ -238,7 +238,7 @@ export default function Home() {
 
                 {hasScores && (
                   <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "16px" }}>
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "12px", letterSpacing: "1px" }}>SMS PERCENTILES (≥75 = ALERT)</p>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "12px", letterSpacing: "1px" }}>SAFETY MEASUREMENT SYSTEM (SMS) PERCENTILES (≥75 = ALERT)</p>
                     <ScoreBar label="UNSAFE DRIVING" value={carrier.unsafe_driving_percentile} />
                     <ScoreBar label="CRASH INDICATOR" value={carrier.crash_indicator_percentile} />
                     <ScoreBar label="DRIVER FITNESS" value={carrier.driver_fitness_percentile} />

@@ -66,8 +66,8 @@ function buildEvents(props: Props): TimelineEvent[] {
     const oosCount = (insp.oos_vehicles ?? 0) + (insp.oos_drivers ?? 0);
     if (oosCount > 0) {
       const oosParts: string[] = [];
-      if (insp.oos_vehicles && insp.oos_vehicles > 0) oosParts.push(`${insp.oos_vehicles} vehicle OOS`);
-      if (insp.oos_drivers && insp.oos_drivers > 0) oosParts.push(`${insp.oos_drivers} driver OOS`);
+      if (insp.oos_vehicles && insp.oos_vehicles > 0) oosParts.push(`${insp.oos_vehicles} vehicle out-of-service (OOS)`);
+      if (insp.oos_drivers && insp.oos_drivers > 0) oosParts.push(`${insp.oos_drivers} driver out-of-service (OOS)`);
       parts.push(oosParts.join(", "));
     }
     const detail = parts.length > 0 ? ` with ${parts.join(" and ")}` : "";
