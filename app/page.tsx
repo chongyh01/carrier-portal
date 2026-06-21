@@ -12,11 +12,33 @@ const HEADERS = {
   'Content-Type': 'application/json',
 };
 
+// Change 1 — US state name map
+const STATE_NAMES: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
+  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
+  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
+  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+  DC: "District of Columbia",
+};
+
+function expandState(abbr?: string): string | undefined {
+  if (!abbr) return undefined;
+  return STATE_NAMES[abbr.toUpperCase()] ?? abbr;
+}
+
+// Change 2 — Carrier type with mc_number and no_authority_data
 type Carrier = {
   dot_number: string;
   legal_name: string;
   dba_name?: string;
   state?: string;
+  mc_number?: string;
   cargo_type?: string;
   status?: string;
   unsafe_driving_percentile?: number;
@@ -27,18 +49,21 @@ type Carrier = {
   total_crashes?: number;
   fatal_crashes?: number;
   has_revocation?: boolean;
+  no_authority_data?: boolean;
 };
 
 const ALERT_THRESHOLD = 75;
 
-// Authority/revocation badge only — no crash/SMS/risk scoring.
-// Shows factual authority history: REVOKED, ACTIVE—PRIOR HISTORY, or nothing.
+// Change 4 — getRiskLevel: adds NO DATA state + DISCONTINUED filter
+// Badge shows authority/revocation history only — no crash/SMS/risk scoring.
 function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } | null {
   const isInactive = (carrier.status ?? "").toUpperCase() === "INACTIVE";
   const isActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
+  const isForHire  = !!carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC";
 
-  if (isInactive && carrier.has_revocation) return { label: "REVOKED",                color: "#dc2626", bg: "#fef2f2" };
-  if (isActive  && carrier.has_revocation)  return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
+  if (isInactive && carrier.has_revocation)   return { label: "REVOKED",                      color: "#dc2626", bg: "#fef2f2" };
+  if (isActive  && carrier.has_revocation)    return { label: "ACTIVE — PRIOR HISTORY",       color: "#d97706", bg: "#fffbeb" };
+  if (isForHire && carrier.no_authority_data) return { label: "NO DATA — Verify with FMCSA", color: "#6b7280", bg: "#f3f4f6" };
   return null;
 }
 
@@ -63,7 +88,8 @@ function ScoreBar({ label, value }: { label: string; value?: number }) {
 async function searchCarriers(query: string): Promise<Carrier[]> {
   const isNumber = /^\d+$/.test(query.trim());
   const q = query.trim();
-  const select = 'dot_number,legal_name,dba_name,state,cargo_type,status';
+  // Change 3 — include mc_number in select
+  const select = 'dot_number,legal_name,dba_name,state,mc_number,cargo_type,status';
 
   const carrierUrl = isNumber
     ? `${SUPABASE_URL}/rest/v1/carriers?select=${select}&dot_number=eq.${q}&limit=20`
@@ -91,7 +117,14 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
 
   const dots = carriers.map((c) => c.dot_number).join(',');
 
-  const [smsRes, crashRes, revRes] = await Promise.all([
+  // Change 5a — identify for-hire carriers to fetch authority data for them
+  const forHireDots = carriers
+    .filter((c: any) => c.mc_number && c.mc_number.trim().toUpperCase() !== "MC")
+    .map((c: any) => c.dot_number);
+
+  // Change 5b — 4th parallel fetch: authority_history for for-hire carriers
+  // Change 4b — DISCONTINUED filter on revocations (revocations reversed by FMCSA should not trigger badge)
+  const [smsRes, crashRes, revRes, authRes] = await Promise.all([
     fetch(
       `${SUPABASE_URL}/rest/v1/sms_scores?select=dot_number,unsafe_driving,crash_indicator,driver_fitness,controlled_substances_alcohol,vehicle_maintenance&dot_number=in.(${dots})&order=score_date.desc`,
       { headers: HEADERS }
@@ -101,9 +134,15 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
       { headers: HEADERS }
     ),
     fetch(
-      `${SUPABASE_URL}/rest/v1/carrier_alerts?select=dot_number&event_type=eq.INVOLUNTARY_REVOCATION&dot_number=in.(${dots})&limit=500`,
+      `${SUPABASE_URL}/rest/v1/carrier_alerts?select=dot_number&event_type=eq.INVOLUNTARY_REVOCATION&description=not.ilike.*DISCONTINUED*&dot_number=in.(${dots})&limit=500`,
       { headers: HEADERS }
     ),
+    forHireDots.length > 0
+      ? fetch(
+          `${SUPABASE_URL}/rest/v1/authority_history?select=dot_number&dot_number=in.(${forHireDots.join(',')})&limit=500`,
+          { headers: HEADERS }
+        )
+      : Promise.resolve(null),
   ]);
 
   const smsMap = new Map<string, any>();
@@ -128,9 +167,16 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
     for (const r of await revRes.json()) revocationSet.add(r.dot_number);
   }
 
+  // Change 5c — build authority set to detect NO DATA carriers
+  const hasAuthoritySet = new Set<string>();
+  if (authRes && authRes.ok) {
+    for (const a of await authRes.json()) hasAuthoritySet.add(a.dot_number);
+  }
+
   return carriers.map((c) => {
     const sms = smsMap.get(c.dot_number);
     const crash = crashMap.get(c.dot_number);
+    const isForHire = c.mc_number && c.mc_number.trim().toUpperCase() !== "MC";
     return {
       ...c,
       unsafe_driving_percentile: sms?.unsafe_driving ?? undefined,
@@ -141,6 +187,7 @@ async function searchCarriers(query: string): Promise<Carrier[]> {
       total_crashes: crash?.total,
       fatal_crashes: crash?.fatal,
       has_revocation: revocationSet.has(c.dot_number),
+      no_authority_data: isForHire && !hasAuthoritySet.has(c.dot_number),
     };
   });
 }
@@ -198,7 +245,12 @@ export default function Home() {
 
       <section style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 24px" }}>
         {loading && <p style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "13px" }}>Searching FMCSA database...</p>}
-        {!loading && searched && results.length === 0 && <p style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "13px" }}>No carriers found for &quot;{query}&quot;</p>}
+        {/* Change 8 — improved zero-results message */}
+        {!loading && searched && results.length === 0 && (
+          <p style={{ textAlign: "center", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "13px" }}>
+            No carrier found for &quot;{query}&quot;. Try searching by DOT number directly.
+          </p>
+        )}
         {!loading && results.length > 0 && <p style={{ color: "#64748b", fontSize: "13px", fontFamily: "'DM Mono', monospace", marginBottom: "20px" }}>{results.length} RESULT{results.length !== 1 ? "S" : ""} FOUND</p>}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -220,19 +272,41 @@ export default function Home() {
                     {carrier.dba_name && <p style={{ fontSize: "13px", color: "#64748b" }}>DBA: {carrier.dba_name}</p>}
                     <div style={{ display: "flex", gap: "12px", marginTop: "6px", flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>DOT #{carrier.dot_number}</span>
-                      {carrier.state && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.state}</span>}
+                      {/* Change 6 — mc_number shown (guard against bare "MC" placeholder) */}
+                      {carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC" && (
+                        <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>MC #{carrier.mc_number}</span>
+                      )}
+                      {/* Change 6 — full state name */}
+                      {carrier.state && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{expandState(carrier.state)}</span>}
                       {carrier.cargo_type && <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: "#94a3b8" }}>{carrier.cargo_type}</span>}
+                      {/* Change 7 — "on record" suffix */}
                       {(carrier.total_crashes ?? 0) > 0 && (
                         <span style={{ fontSize: "12px", fontFamily: "'DM Mono', monospace", color: (carrier.fatal_crashes ?? 0) > 0 ? "#ef4444" : "#f97316", fontWeight: 600 }}>
-                          {carrier.total_crashes} crash{carrier.total_crashes !== 1 ? "es" : ""}
+                          {carrier.total_crashes} crash{carrier.total_crashes !== 1 ? "es" : ""} on record
                           {(carrier.fatal_crashes ?? 0) > 0 && ` · ${carrier.fatal_crashes} fatal`}
                         </span>
                       )}
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    {risk && <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>}
-                    {carrier.status && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", fontFamily: "'DM Mono', monospace" }}>Status: {carrier.status}</p>}
+                  {/* Change 7 — status inline with badge */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {carrier.status && (
+                        <span style={{
+                          fontSize: "12px",
+                          fontFamily: "'DM Mono', monospace",
+                          fontWeight: 600,
+                          color: (carrier.status ?? "").toUpperCase() === "ACTIVE" ? "#16a34a" : "#6b7280",
+                        }}>
+                          {carrier.status.charAt(0).toUpperCase() + carrier.status.slice(1).toLowerCase()}
+                        </span>
+                      )}
+                      {risk && (
+                        <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>
+                          {risk.label}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
