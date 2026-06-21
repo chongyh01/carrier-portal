@@ -27,8 +27,7 @@
 ### Open
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
-| Missing inspection dates | Inspection table | Inspections with null inspection_date excluded from all time-bucket views (inRange returns false for null); data issue not yet diagnosed |
-| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | Not yet diagnosed; violations show without inspection link |
+| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | No shared join key between violations and inspections tables — requires reimport with inspection linkage |
 
 ### Fixed
 | Issue | Root Cause | Fix | Date |
@@ -70,6 +69,7 @@
 | `import_boc3_rejected.py` DROP TABLE wiped data on every re-run | `import_boc3_rejected.py` | Changed to CREATE IF NOT EXISTS + TRUNCATE RESTART IDENTITY — preserves structure and indexes | 2026-06-22 |
 | `rejected_insurance.class_code` used wrong column `mod_col_3` | `fmcsa_import.py` + `import_boc3_rejected.py` | Both scripts already use `ins_class_code or mod_col_3` fallback — already fixed in code; data reimport not required | 2026-06-22 |
 | CFR code key format mismatch (398.8D1-MW vs 398.8D1-mw) | `cfr_descriptions.json` + `CarrierDetailView.tsx` | Removed lowercase duplicate from both JSON files; added `.toUpperCase()` fallback in `cfrDescription()` | 2026-06-22 |
+| Missing inspection dates — 8.1M rows with 1970-01-01 epoch placeholder | `reimport_inspections.py` + `safe_date()` | `pd.read_csv` without `dtype=str` inferred `insp_date` as integer; `pd.to_datetime(20230715)` = nanoseconds = 1970-01-01. Fix: `reimport_inspections_V2.py` forces `dtype=str` + uses `format="%Y%m%d"` for 8-digit strings. UI fix: "Undated Inspections" section added to `CarrierDetailView.tsx` shows non-compliant inspections excluded from time buckets. Pipeline reimport pending. | 2026-06-21 |
 
 ---
 
@@ -104,6 +104,7 @@ python reimport_insurance_parallel.py   # DONE 2026-06-20 ~20:28 SGT — InsHist
 python reimport_revocation_parallel.py  # DONE 2026-06-20 ~20:02 SGT — 1,459,980 rows (all 5 workers); 0 dupes found
 python dedup_carrier_alerts.py          # DONE 2026-06-20 — 0 dupes found, 1,360,690 INVOLUNTARY_REVOCATION rows clean
 python fetch_cfr_codes.py               # DONE 2026-06-20 — cfr_descriptions.json generated (2,365 codes) and integrated into CarrierDetailView.tsx
+python reimport_inspections_V2.py       # PENDING — fixes epoch date bug; pilot tested (1000 rows OK). Run to fix 8.1M rows.
 ```
 
 **Current DB row counts (verified 2026-06-20):**
