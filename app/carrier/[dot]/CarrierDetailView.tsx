@@ -308,13 +308,14 @@ type TimeBucketProps = {
   inspections: Inspection[];
   carrier: Carrier;
   sms: SmsScores | null;
+  rejectedInsurance: RejectedInsurance[];
 };
 
 function TimeBucketSection({
   label, sub, highlight = false,
   bucketStart, bucketEnd,
   crashes, violations, insurance, oosOrders, revocations, authorityHistory, inspections,
-  carrier, sms,
+  carrier, sms, rejectedInsurance,
 }: TimeBucketProps) {
   const s = bucketStart;
   const e = bucketEnd;
@@ -629,6 +630,93 @@ function TimeBucketSection({
             {bucketInsurance.length > 0 && (
               <>
                 <SubHeader title="Insurance History" />
+                {/* Insurance Summary card — BI&PD only (91, 91X, 82) */}
+                {(() => {
+                  const BIPD_CODES = ["91", "91X", "82"];
+                  const bipdInBucket = bucketInsurance
+                    .filter(ins => BIPD_CODES.includes((ins.policy_type ?? "").trim().toUpperCase()))
+                    .filter(ins => ins.effective_date)
+                    .sort((a, b) => (a.effective_date ?? "").localeCompare(b.effective_date ?? ""));
+                  if (bipdInBucket.length === 0) return null;
+
+                  const cancelledCount = bipdInBucket.filter(ins => ins.cancellation_date).length;
+                  const replacedCount  = bipdInBucket.filter(ins => (ins.status ?? "").toLowerCase() === "replaced").length;
+
+                  // Lapse detection: gap between cancel_date of one policy and effective_date of next
+                  const lapses: Array<{ gapDays: number; from: string; to: string }> = [];
+                  for (let i = 0; i < bipdInBucket.length - 1; i++) {
+                    const from = dateOnly(bipdInBucket[i].cancellation_date);
+                    const to   = dateOnly(bipdInBucket[i + 1].effective_date);
+                    if (!from || !to || from >= to) continue;
+                    const gapDays = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000);
+                    if (gapDays > 0) lapses.push({ gapDays, from, to });
+                  }
+
+                  // Rejected filings in this bucket (by received_date or rejected_date, BI&PD form codes only)
+                  const bucketRejected = rejectedInsurance.filter(r => {
+                    const fc = (r.form_code ?? "").trim().toUpperCase();
+                    if (!BIPD_CODES.includes(fc)) return false;
+                    const d = dateOnly(r.received_date ?? r.rejected_date);
+                    if (!d) return false;
+                    if (bucketStart && d < bucketStart) return false;
+                    if (bucketEnd && d > bucketEnd) return false;
+                    return true;
+                  });
+
+                  const worstGap = lapses.reduce<{ gapDays: number; from: string; to: string } | null>(
+                    (max, l) => (max === null || l.gapDays > max.gapDays ? l : max), null
+                  );
+
+                  const lines: Array<{ text: string; color: string; bg?: string }> = [];
+
+                  // Line 1 — count
+                  lines.push({ text: `${bipdInBucket.length} Bodily Injury & Property Damage (BI&PD) policy record${bipdInBucket.length !== 1 ? "s" : ""} in this period`, color: "#374151" });
+
+                  // Line 2 — cancellations
+                  if (cancelledCount > 0) {
+                    lines.push({ text: `${cancelledCount} polic${cancelledCount === 1 ? "y" : "ies"} cancelled`, color: "#92400e" });
+                  }
+
+                  // Line 3 — coverage gaps
+                  if (worstGap) {
+                    const isLong = worstGap.gapDays > 30;
+                    const gapText = `Coverage gap: ${worstGap.gapDays} day${worstGap.gapDays !== 1 ? "s" : ""} between ${fmtDate(worstGap.from)} and ${fmtDate(worstGap.to)}`;
+                    lines.push({ text: `${isLong ? "⚠ " : ""}${gapText}`, color: isLong ? "#991b1b" : "#92400e" });
+                    if (lapses.length > 1) {
+                      lines.push({ text: `${lapses.length} total coverage gaps in this period`, color: isLong ? "#991b1b" : "#92400e" });
+                    }
+                  }
+
+                  // Line 4 — replacements (normal renewal pattern)
+                  if (replacedCount > 0) {
+                    lines.push({ text: `Policy replaced ${replacedCount} time${replacedCount !== 1 ? "s" : ""} (normal renewal pattern)`, color: "#374151" });
+                  }
+
+                  // Line 5 — rejected filings
+                  if (bucketRejected.length > 0) {
+                    lines.push({ text: `⚠ ${bucketRejected.length} FMCSA filing rejection${bucketRejected.length !== 1 ? "s" : ""} in this period`, color: "#991b1b" });
+                  }
+
+                  const hasWarning = worstGap && worstGap.gapDays > 30;
+                  const hasAmber   = cancelledCount > 0 || (worstGap !== null && !hasWarning);
+                  const cardBg     = hasWarning ? "#fef2f2" : hasAmber ? "#fffbeb" : "#f8fafc";
+                  const cardBorder = hasWarning ? "#fecaca" : hasAmber ? "#fde68a" : "#e2e8f0";
+
+                  return (
+                    <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: "8px", padding: "12px 16px", marginBottom: "12px" }}>
+                      <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
+                        Insurance Summary
+                      </p>
+                      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                        {lines.map((line, i) => (
+                          <li key={i} style={{ fontSize: "12px", color: line.color, lineHeight: "1.7", fontFamily: "'DM Mono', monospace" }}>
+                            • {line.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                     <thead><TH cols={["Type", "Insurer", "Policy #", "Effective", "Cancelled", "Status"]} /></thead>
@@ -1203,7 +1291,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   const sharedProps = {
     crashes: cleanedCrashes, violations, insurance: dedupedInsurance,
     oosOrders, revocations, authorityHistory, inspections,
-    carrier, sms,
+    carrier, sms, rejectedInsurance,
   };
 
   // Inspections with no date at all — excluded by inRange() so they'd otherwise vanish
