@@ -24,3 +24,56 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─── Print / PDF styles ──────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+
+  @page {
+    size: A4;
+    margin: 18mm 14mm;
+  }
+
+  body {
+    background: white !important;
+    color: #0f172a !important;
+    font-size: 11pt;
+  }
+
+  /* Force white backgrounds on all cards */
+  div[style*="background: white"],
+  div[style*="background:#f8fafc"],
+  div[style*="background: #f8fafc"] {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Avoid page breaks inside cards */
+  div[style*="borderRadius: \"12px\""],
+  div[style*="border-radius: 12px"] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Keep color backgrounds for status badges */
+  span, div { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Disclaimer always at bottom */
+  .print-disclaimer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: 8pt;
+    color: #64748b;
+    text-align: center;
+    border-top: 1px solid #e2e8f0;
+    padding: 4px 0;
+  }
+}
+
+/* Hide print-only elements on screen */
+.print-only { display: none; }

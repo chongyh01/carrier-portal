@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -19,6 +19,33 @@ import type {
   RejectedInsurance,
   SuspectSuccessor,
 } from "./types";
+
+// ── FMCSA terminology tooltips ────────────────────────────────────────────────
+const FMCSA_TERMS: Record<string, string> = {
+  OOS:       "Out-of-Service — carrier or vehicle was ordered to stop operating",
+  SMS:       "Safety Measurement System — FMCSA's scoring system for carrier safety",
+  BASIC:     "Behavior Analysis and Safety Improvement Category — one of 7 FMCSA safety categories",
+  "MCS-150": "Motor Carrier Identification Report — annual safety update required by FMCSA",
+  "BI&PD":   "Bodily Injury and Property Damage — minimum insurance coverage required by law",
+  HOS:       "Hours of Service — federal rules limiting how long a driver can operate",
+  "BOC-3":   "Blanket of Coverage Form — designates a process agent for legal service",
+  BOC3:      "Blanket of Coverage Form — designates a process agent for legal service",
+  CFR:       "Code of Federal Regulations — federal safety rules that carriers must follow",
+  DOT:       "US Department of Transportation registration number",
+  FMCSA:     "Federal Motor Carrier Safety Administration — agency that regulates commercial trucking",
+};
+
+function FmcsaTerm({ term }: { term: keyof typeof FMCSA_TERMS }) {
+  return (
+    <abbr title={FMCSA_TERMS[term]} style={{
+      borderBottom: "1px dotted #64748b",
+      textDecoration: "none",
+      cursor: "help",
+    }}>
+      {term}
+    </abbr>
+  );
+}
 
 const ALERT_THRESHOLD = 75;
 
@@ -309,13 +336,14 @@ type TimeBucketProps = {
   carrier: Carrier;
   sms: SmsScores | null;
   rejectedInsurance: RejectedInsurance[];
+  accidentDate?: string;
 };
 
 function TimeBucketSection({
   label, sub, highlight = false,
   bucketStart, bucketEnd,
   crashes, violations, insurance, oosOrders, revocations, authorityHistory, inspections,
-  carrier, sms, rejectedInsurance,
+  carrier, sms, rejectedInsurance, accidentDate,
 }: TimeBucketProps) {
   const s = bucketStart;
   const e = bucketEnd;
@@ -1177,6 +1205,180 @@ type Props = {
   suspectSuccessors: SuspectSuccessor[];
 };
 
+
+// ─── CSV Export ──────────────────────────────────────────────
+function csvCell(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function csvRow(cells: (string | number | null | undefined)[]): string {
+  return cells.map(csvCell).join(",");
+}
+
+function generateCarrierCSV(
+  carrier: Carrier,
+  crashes: Crash[],
+  inspections: Inspection[],
+  violations: Violation[],
+  insurance: Insurance[],
+  authorityHistory: AuthorityRecord[],
+  revocations: CarrierAlert[],
+): string {
+  const lines: string[] = [];
+
+  // Section 1 — Carrier Information
+  lines.push("=== CARRIER INFORMATION ===");
+  lines.push(csvRow(["DOT Number", "Company Name", "DBA Name", "MC Number", "Status", "Address", "City", "State", "Zip", "Phone", "Cargo Type", "Total Drivers", "Total Trucks", "Safety Rating", "Safety Rating Date"]));
+  lines.push(csvRow([
+    carrier.dot_number,
+    carrier.legal_name,
+    carrier.dba_name ?? "",
+    (carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC") ? carrier.mc_number : "",
+    carrier.status ?? "",
+    carrier.address ?? "",
+    carrier.city ?? "",
+    carrier.state ?? "",
+    carrier.zip ?? "",
+    carrier.phone ?? "",
+    carrier.cargo_type ?? "",
+    carrier.total_drivers ?? "",
+    carrier.total_trucks ?? "",
+    carrier.safety_rating ?? "",
+    carrier.safety_rating_date ? carrier.safety_rating_date.slice(0, 10) : "",
+  ]));
+  lines.push("");
+
+  // Section 2 — Crash History
+  lines.push("=== CRASH HISTORY ===");
+  if (crashes.length === 0) {
+    lines.push("No crash records.");
+  } else {
+    lines.push(csvRow(["Date", "State", "Fatal", "Injury", "Towaway", "Report Number"]));
+    for (const c of crashes) {
+      lines.push(csvRow([
+        c.crash_date ? c.crash_date.slice(0, 10) : "",
+        c.state ?? "",
+        c.fatal ?? 0,
+        c.injury ?? 0,
+        c.towaway ?? 0,
+        c.report_number ?? "",
+      ]));
+    }
+  }
+  lines.push("");
+
+  // Section 3 — Inspections
+  lines.push("=== INSPECTION HISTORY ===");
+  if (inspections.length === 0) {
+    lines.push("No inspection records.");
+  } else {
+    lines.push(csvRow(["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"]));
+    for (const i of inspections) {
+      const hasDate = i.inspection_date && !i.inspection_date.startsWith("1970-01-01");
+      lines.push(csvRow([
+        hasDate ? i.inspection_date!.slice(0, 10) : "",
+        i.state ?? "",
+        i.level ?? "",
+        i.total_violations ?? 0,
+        i.oos_vehicles ?? 0,
+        i.oos_drivers ?? 0,
+      ]));
+    }
+  }
+  lines.push("");
+
+  // Section 4 — Violations
+  lines.push("=== VIOLATIONS ===");
+  if (violations.length === 0) {
+    lines.push("No violation records.");
+  } else {
+    lines.push(csvRow(["Inspection Date", "Violation Code", "Description", "OOS Indicator", "Unit Type", "Basic Category"]));
+    for (const v of violations) {
+      const vx = v as Violation & { inspection_date?: string };
+      const hasDate = vx.inspection_date && !vx.inspection_date.startsWith("1970-01-01");
+      lines.push(csvRow([
+        hasDate ? vx.inspection_date!.slice(0, 10) : "",
+        v.violation_code ?? "",
+        v.description ?? "",
+        v.oos_indicator ?? "",
+        v.unit_type ?? "",
+        v.basic_category ?? "",
+      ]));
+    }
+  }
+  lines.push("");
+
+  // Section 5 — Insurance History
+  lines.push("=== INSURANCE HISTORY ===");
+  if (insurance.length === 0) {
+    lines.push("No insurance records.");
+  } else {
+    lines.push(csvRow(["Effective Date", "Cancellation Date", "Form Code", "Insurance Company", "Policy Number", "Status"]));
+    for (const ins of insurance) {
+      lines.push(csvRow([
+        ins.effective_date ? ins.effective_date.slice(0, 10) : "",
+        ins.cancellation_date ? ins.cancellation_date.slice(0, 10) : "",
+        ins.policy_type ?? "",
+        ins.insurer_name ?? "",
+        ins.policy_number ?? "",
+        ins.status ?? "",
+      ]));
+    }
+  }
+  lines.push("");
+
+  // Section 6 — Authority History
+  lines.push("=== AUTHORITY HISTORY ===");
+  if (authorityHistory.length === 0) {
+    lines.push("No authority records.");
+  } else {
+    lines.push(csvRow(["Effective Date", "Final Date", "Status", "Type", "Reason"]));
+    for (const a of authorityHistory) {
+      lines.push(csvRow([
+        a.effective_date ? a.effective_date.slice(0, 10) : "",
+        a.revocation_date ? a.revocation_date.slice(0, 10) : "",
+        a.status ?? "",
+        a.authority_type ?? "",
+        a.reason ?? "",
+      ]));
+    }
+  }
+  lines.push("");
+
+  // Section 7 — Revocations
+  lines.push("=== REVOCATION HISTORY ===");
+  if (revocations.length === 0) {
+    lines.push("No revocation records.");
+  } else {
+    lines.push(csvRow(["Event Date", "Event Type", "Description"]));
+    for (const r of revocations) {
+      lines.push(csvRow([
+        r.event_date ? r.event_date.slice(0, 10) : "",
+        r.event_type ?? "",
+        r.description ?? "Involuntary Revocation",
+      ]));
+    }
+  }
+  lines.push("");
+  lines.push("Data sourced from FMCSA public records. For informational purposes only.");
+
+  return lines.join("\r\n");
+}
+
+function downloadCSV(content: string, filename: string): void {
+  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 // ─── Main component ──────────────────────────────────────────
 export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders, boc3, rejectedInsurance, suspectSuccessors }: Props) {
   const [accidentDate, setAccidentDate] = useState("");
@@ -1373,9 +1575,29 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        abbr[title] { text-decoration: none; position: relative; }
+        abbr[title]:hover::after {
+          content: attr(title);
+          position: absolute;
+          bottom: calc(100% + 6px);
+          left: 50%;
+          transform: translateX(-50%);
+          background: #1e293b;
+          color: #f8fafc;
+          font-size: 11px;
+          font-family: 'DM Sans', sans-serif;
+          font-weight: 400;
+          line-height: 1.45;
+          padding: 6px 10px;
+          border-radius: 6px;
+          white-space: normal;
+          width: 220px;
+          z-index: 9999;
+          pointer-events: none;
+        }
       `}</style>
 
-      <header style={{ background: "#0f172a", padding: "16px 32px", display: "flex", alignItems: "center", gap: "12px" }}>
+      <header className="no-print" style={{ background: "#0f172a", padding: "16px 32px", display: "flex", alignItems: "center", gap: "12px" }}>
         <div style={{ width: "32px", height: "32px", background: "#3b82f6", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ color: "white", fontSize: "16px" }}>🚛</span>
         </div>
@@ -1384,9 +1606,20 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
       </header>
 
       <div style={{ maxWidth: "860px", margin: "0 auto", padding: "32px 24px" }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px", textDecoration: "none", marginBottom: "24px", fontFamily: "'DM Mono', monospace" }}>
+        <Link href="/" className="no-print" style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#64748b", fontSize: "13px", textDecoration: "none", marginBottom: "24px", fontFamily: "'DM Mono', monospace" }}>
           ← Back to search
         </Link>
+
+        {/* Print-only cover page */}
+        <div className="print-only" style={{ marginBottom: "24px", paddingBottom: "16px", borderBottom: "2px solid #0f172a" }}>
+          <p style={{ fontSize: "10pt", color: "#64748b", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>CARRIER INTELLIGENCE REPORT · FMCSA DATA</p>
+          <h1 style={{ fontSize: "20pt", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{carrier.legal_name}</h1>
+          {carrier.dba_name && <p style={{ fontSize: "12pt", color: "#374151" }}>DBA: {carrier.dba_name}</p>}
+          <p style={{ fontSize: "11pt", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>
+            DOT #{carrier.dot_number}{(carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC") ? ` · MC #${carrier.mc_number}` : ""}
+            {" · "}Report generated: {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+          </p>
+        </div>
 
         {/* Section 1 — Carrier Info */}
         <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
@@ -1401,10 +1634,40 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                 Source: FMCSA Census Data{carrier.updated_at ? ` · Last Updated: ${fmtDate(carrier.updated_at)}` : ""}
               </p>
             </div>
-            {risk
-              ? <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
-              : <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: "#f1f5f9", color: "#64748b", fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>No Authority Issues Found</span>
-            }
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+              {risk
+                ? <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
+                : <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: "#f1f5f9", color: "#64748b", fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>No Authority Issues Found</span>
+              }
+              <button
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const csv = generateCarrierCSV(carrier, cleanedCrashes, inspections, violations, dedupedInsurance, authorityHistory, revocations);
+                  downloadCSV(csv, `carrier_${carrier.dot_number}_${today}.csv`);
+                }}
+                className="no-print"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "6px 14px", borderRadius: "8px", border: "1px solid #e2e8f0",
+                  background: "#f8fafc", color: "#374151", fontSize: "12px",
+                  fontFamily: "'DM Mono', monospace", fontWeight: 500, cursor: "pointer",
+                }}
+              >
+                Export Data (CSV)
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="no-print"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "6px 14px", borderRadius: "8px", border: "1px solid #3b82f6",
+                  background: "#eff6ff", color: "#1d4ed8", fontSize: "12px",
+                  fontFamily: "'DM Mono', monospace", fontWeight: 500, cursor: "pointer",
+                }}
+              >
+                Print / PDF
+              </button>
+            </div>
           </div>
           <InfoRow label="Address"      value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
           <InfoRow label="Phone"        value={carrier.phone} />
@@ -1668,38 +1931,50 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
         {/* Section — Chameleon Carrier Detection */}
         {suspectSuccessors.length > 0 && (
-          <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "2px solid #fca5a5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", marginBottom: "6px" }}>⚠ Possible Successor / Related Entities</h2>
-            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
-              The following carriers share the same address, phone number, or BOC-3 process agent as this carrier. If this carrier has a history of revocation, these may be successor entities operating under a new DOT number. These are investigative leads, not confirmed conclusions. Independent verification required.
-            </p>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                    {["Carrier Name", "DOT #", "MC #", "Status", "Connection"].map(h => (
-                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {suspectSuccessors.map((s, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
-                      <td style={{ padding: "8px 12px" }}>
-                        <a href={`/carrier/${s.dot_number}`} style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 600 }}>{s.legal_name}</a>
-                      </td>
-                      <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.dot_number}</td>
-                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.mc_number ?? "—"}</td>
-                      <td style={{ padding: "8px 12px" }}>
-                        <span style={{ padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: s.status === "ACTIVE" ? "#f0fdf4" : "#fef2f2", color: s.status === "ACTIVE" ? "#22c55e" : "#ef4444" }}>
-                          {s.status ?? "UNKNOWN"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "8px 12px", color: "#f97316", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.connection_type}</td>
+          <div style={{ background: "white", borderRadius: "12px", padding: "0", border: "2px solid #fcd34d", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px", overflow: "hidden" }}>
+            {/* Amber header band */}
+            <div style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", padding: "16px 28px" }}>
+              <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#92400e", margin: 0 }}>⚠ Possible Successor Entities Detected</h2>
+              <p style={{ fontSize: "12px", color: "#78350f", marginTop: "4px", marginBottom: 0, lineHeight: "1.5" }}>
+                This carrier has a revocation history. The following carriers may be connected to the same underlying operation:
+              </p>
+            </div>
+            <div style={{ padding: "20px 28px" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                      {["Carrier Name / DOT", "MC #", "Status", "Connection", "First Authority After Revocation"].map(h => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {suspectSuccessors.map((s, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
+                        <td style={{ padding: "8px 12px" }}>
+                          <Link href={`/carrier/${s.dot_number}`} style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 600 }}>{s.legal_name}</Link>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "2px" }}>DOT {s.dot_number}</div>
+                        </td>
+                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.mc_number ?? "—"}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{ padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: s.status === "ACTIVE" ? "#f0fdf4" : "#fef2f2", color: s.status === "ACTIVE" ? "#22c55e" : "#ef4444" }}>
+                            {s.status ?? "UNKNOWN"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 12px", color: "#d97706", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.connection_type}</td>
+                        <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{s.first_authority_date ? fmtDate(s.first_authority_date) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Disclaimer */}
+              <div style={{ marginTop: "16px", background: "#f8fafc", borderRadius: "6px", padding: "10px 14px", border: "1px solid #e2e8f0" }}>
+                <p style={{ fontSize: "11px", color: "#64748b", margin: 0, lineHeight: "1.5" }}>
+                  <strong>Disclaimer:</strong> These are investigative leads, not confirmed conclusions. A shared address, phone, or process agent does not by itself prove common ownership. Independent verification required before relying on this information in litigation.
+                </p>
+              </div>
             </div>
           </div>
         )}
