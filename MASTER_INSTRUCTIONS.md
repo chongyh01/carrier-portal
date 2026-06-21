@@ -214,9 +214,22 @@ LIMIT 10
 ---
 
 ## 10. Other Backlog (lower priority)
-- **Browser verification** — verify P4 (KeyFindings + CarrierTimeline + DATA_GAP), BOC3 section, chameleon section, new REVOKED/ACTIVE-PRIOR HISTORY badges in browser. Use test carriers: DOT 2259497 (Buckshot), DOT 204814 (BINKS), DOT 2293690 (Bob Hammer — should show REVOKED).
-- **SAFER manual spot-checks** — 5 carriers listed in Jun 20 session log (browser only).
+- **Badge + SAFER verification** — DONE 2026-06-22 via DB query + Socrata. See findings below.
 - **P5 Chameleon prerequisites**: All met (reimports done, indexes created). Can implement P5 after beta launch.
+
+### Badge Verification Results (2026-06-22, verified against DB + Socrata)
+| DOT | Carrier | Badge | Notes |
+|-----|---------|-------|-------|
+| 2293690 | Nu Breed Transport | REVOKED ✅ | INACTIVE + 1 real revocation |
+| 204814 | BINKS Coca Cola | HIGH RISK ✅ | 5 crashes incl. 1 fatal (Nov 2014, MI) — original expectation of CLEAR was wrong |
+| 2259497 | Buckshot Transport | ELEVATED ✅ | 4 revocations + 3 crashes |
+| 85526 | Exhibitor's Service Co | REVOKED ✅ | INACTIVE + 2 revocations |
+| 100115 | Lamers Bus Lines | HIGH RISK ✅ | 500 crashes, 7 fatal |
+| 914218 | Hale Trucking | ELEVATED ✅ | 5 crashes, active authority+insurance |
+| 228442 | A P Giesbrecht | ELEVATED ✅ | 15 crashes, authority since 1986 |
+| 4573227 | Trucking R Us LLC (active) | DATA GAP ⚠️ | No authority_history or insurance records — carrier is very new; DATA_GAP warning displays correctly |
+
+**For accident-date badge testing:** Use DOT 2528133 (TRUCKING R US LLC, INACTIVE). Authority+insurance both lapsed as of Aug 2016. Set accident date to 2016-09-01 → should trigger HIGH RISK (both auth+insurance inactive on accident date).
 - Supabase compute downgrade Small → Micro/Nano (already initiated).
 - Stripe integration (deprioritized; pricing: solo ~$199/mo, small firm ~$399/mo, large firm ~$799/mon).
 - `import_boc3_rejected.py` uses DROP TABLE — will wipe on every run. Fix: change to TRUNCATE before next use.
