@@ -1563,6 +1563,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     crashes: cleanedCrashes, violations, insurance: dedupedInsurance,
     oosOrders, revocations, authorityHistory, inspections,
     carrier, sms, rejectedInsurance,
+    accidentDate: accidentDate || undefined,
   };
 
   // Inspections with no date at all — excluded by inRange() so they'd otherwise vanish
@@ -1626,12 +1627,12 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px", marginBottom: "24px" }}>
             <div>
               <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{carrier.legal_name}</h1>
-              {carrier.dba_name && <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "4px" }}>DBA: {carrier.dba_name}</p>}
+              {carrier.dba_name && <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "4px" }}>Also known as: {carrier.dba_name}</p>}
               <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
                 DOT #{carrier.dot_number}{(carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC") ? ` · MC #${carrier.mc_number}` : ""}
               </p>
               <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "4px" }}>
-                Source: FMCSA Census Data{carrier.updated_at ? ` · Last Updated: ${fmtDate(carrier.updated_at)}` : ""}
+                Source: FMCSA Carrier Census (az4n-8mr2){carrier.updated_at ? ` · Last Updated: ${fmtDate(carrier.updated_at)}` : ""}
               </p>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
@@ -2107,6 +2108,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           authorityHistory={authorityHistory}
           alerts={alerts}
           oosOrders={oosOrders}
+          rejectedInsurance={rejectedInsurance}
           accidentDate={accidentDate}
         />
 
