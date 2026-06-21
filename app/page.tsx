@@ -31,20 +31,15 @@ type Carrier = {
 
 const ALERT_THRESHOLD = 75;
 
-function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } {
+// Authority/revocation badge only — no crash/SMS/risk scoring.
+// Shows factual authority history: REVOKED, ACTIVE—PRIOR HISTORY, or nothing.
+function getRiskLevel(carrier: Carrier): { label: string; color: string; bg: string } | null {
   const isInactive = (carrier.status ?? "").toUpperCase() === "INACTIVE";
   const isActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
-  const scores     = [carrier.unsafe_driving_percentile, carrier.crash_indicator_percentile, carrier.driver_fitness_percentile, carrier.vehicle_maintenance_percentile].filter((v): v is number => v !== null && v !== undefined);
-  const smsAlerts  = scores.filter(s => s >= ALERT_THRESHOLD).length;
-  const hasFatal   = (carrier.fatal_crashes ?? 0) > 0;
-  const hasCrashes = (carrier.total_crashes ?? 0) > 0;
 
-  if (isInactive && carrier.has_revocation) return { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" };
-  if (smsAlerts >= 3 || hasFatal)           return { label: "HIGH RISK",             color: "#ef4444", bg: "#fef2f2" };
-  if (smsAlerts >= 1 || hasCrashes)         return { label: "ELEVATED",              color: "#f97316", bg: "#fff7ed" };
-  if (isActive && carrier.has_revocation)   return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
-  if (isActive)                             return { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" };
-  return                                           { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
+  if (isInactive && carrier.has_revocation) return { label: "REVOKED",                color: "#dc2626", bg: "#fef2f2" };
+  if (isActive  && carrier.has_revocation)  return { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" };
+  return null;
 }
 
 function ScoreBar({ label, value }: { label: string; value?: number }) {
@@ -236,7 +231,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
+                    {risk && <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>}
                     {carrier.status && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", fontFamily: "'DM Mono', monospace" }}>Status: {carrier.status}</p>}
                   </div>
                 </div>

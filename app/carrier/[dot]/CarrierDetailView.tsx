@@ -952,8 +952,8 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     ? insuranceLapses.find(l => accidentDate >= l.from && accidentDate < l.to) ?? null
     : null;
 
-  // Authority/revocation badge — combined with crash/SMS safety signals
-  // Real revocations = INVOLUNTARY rows in authority_history, excluding DISCONTINUED (reversed revocations)
+  // Authority/revocation badge — factual authority history only.
+  // No crash/SMS/risk scoring. Shows: REVOKED, ACTIVE—PRIOR HISTORY, NO DATA, or nothing.
   const realRevocationsInAuthHist = authorityHistory.filter(a =>
     (a.status ?? "").toUpperCase().includes("INVOLUNTARY") &&
     !(a.reason ?? "").toUpperCase().includes("DISCONTINUED")
@@ -961,19 +961,13 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   const hasAnyRealRevocation = revocations.length > 0 || realRevocationsInAuthHist.length > 0;
   const isCarrierInactive = (carrier.status ?? "").toUpperCase() === "INACTIVE";
   const isCarrierActive   = (carrier.status ?? "").toUpperCase() === "ACTIVE";
-  const smsAlerts  = [sms?.unsafe_driving_alert, sms?.crash_indicator_alert, sms?.driver_fitness_alert, sms?.vehicle_maintenance_alert].filter(Boolean).length;
-  const totalFatal = cleanedCrashes.reduce((s, c) => s + (c.fatal ?? 0), 0);
-  // When accident date is set, factor in derived authority/insurance status
-  const authLapsed = accidentDate ? authorityDerived?.status === "inactive" : false;
-  const insLapsed  = accidentDate ? insuranceDerived?.status === "inactive"  : false;
-  const lapsedCount = (authLapsed ? 1 : 0) + (insLapsed ? 1 : 0);
-  const risk =
-    isCarrierInactive && hasAnyRealRevocation     ? { label: "REVOKED",               color: "#dc2626", bg: "#fef2f2" }
-    : smsAlerts >= 3 || totalFatal > 0 || lapsedCount === 2 ? { label: "HIGH RISK",   color: "#ef4444", bg: "#fef2f2" }
-    : smsAlerts >= 1 || cleanedCrashes.length > 0 || lapsedCount >= 1 ? { label: "ELEVATED", color: "#f97316", bg: "#fff7ed" }
-    : isCarrierActive && hasAnyRealRevocation     ? { label: "ACTIVE — PRIOR HISTORY", color: "#d97706", bg: "#fffbeb" }
-    : isCarrierActive                             ? { label: "CLEAR",                 color: "#22c55e", bg: "#f0fdf4" }
-    :                                               { label: "INACTIVE",              color: "#64748b", bg: "#f8fafc" };
+  const hasAuthorityData  = authorityHistory.length > 0 || revocations.length > 0;
+  const isForHire = !!(carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC");
+  const risk: { label: string; color: string; bg: string } | null =
+    isCarrierInactive && hasAnyRealRevocation ? { label: "REVOKED",                        color: "#dc2626", bg: "#fef2f2" }
+    : isCarrierActive && hasAnyRealRevocation ? { label: "ACTIVE — PRIOR HISTORY",         color: "#d97706", bg: "#fffbeb" }
+    : !hasAuthorityData && isForHire          ? { label: "NO DATA — Verify with FMCSA",    color: "#64748b", bg: "#f8fafc" }
+    : null;
 
   // Bucket boundaries
   let cutoff24     = "";
@@ -1029,9 +1023,10 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                 Source: FMCSA Census Data{carrier.updated_at ? ` · Last Updated: ${fmtDate(carrier.updated_at)}` : ""}
               </p>
             </div>
-            <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>
-              {risk.label}
-            </span>
+            {risk
+              ? <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
+              : <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: "#f1f5f9", color: "#64748b", fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>No Authority Issues Found</span>
+            }
           </div>
           <InfoRow label="Address"      value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
           <InfoRow label="Phone"        value={carrier.phone} />
