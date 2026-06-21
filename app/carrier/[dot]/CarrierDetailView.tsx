@@ -1670,20 +1670,46 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               </button>
             </div>
           </div>
-          <InfoRow label="Address"      value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
-          <InfoRow label="Phone"        value={carrier.phone} />
-          <InfoRow label="State"        value={stateName(carrier.state)} />
-          <InfoRow label="Cargo Type"   value={carrier.cargo_type} />
-          <InfoRow label="Status"       value={carrier.status} />
-          <InfoRow label="Total Drivers" value={carrier.total_drivers} />
-          <InfoRow label="Total Trucks"  value={carrier.total_trucks} />
-          {(carrier.total_drivers === 0 && carrier.total_trucks === 0) && (
-            <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "8px 12px", marginTop: "8px" }}>
-              <p style={{ fontSize: "11px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
-                ⚠ Fleet size shows 0 — FMCSA census data may be incomplete. If carrier appears active, verify driver and truck count directly with FMCSA before relying on these figures.
-              </p>
+          {/* Lawyer Q&A panels */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "16px", marginTop: "8px" }}>
+            <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "14px 16px" }}>
+              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "6px" }}>Is this carrier currently active?</p>
+              {isCarrierActive && (
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#16a34a" }}>ACTIVE{carrier.updated_at ? ` — as of ${fmtDate(carrier.updated_at)}` : ""}</p>
+              )}
+              {isCarrierInactive && hasAnyRealRevocation && (
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#dc2626" }}>INACTIVE — Authority revoked</p>
+              )}
+              {isCarrierInactive && !hasAnyRealRevocation && (
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#64748b" }}>INACTIVE — No longer operating</p>
+              )}
+              {!isCarrierActive && !isCarrierInactive && (
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#64748b" }}>{carrier.status ?? "Unknown"}</p>
+              )}
             </div>
-          )}
+            <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "14px 16px" }}>
+              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "6px" }}>Does this carrier require FMCSA oversight?</p>
+              {isLikelyPrivateCarrier(carrier) ? (
+                <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}><strong>Private Property Carrier</strong> — Not required to maintain FMCSA operating authority</p>
+              ) : isForHire ? (
+                <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}><strong>For-Hire Motor Carrier</strong> — Required to maintain federal operating authority and insurance</p>
+              ) : (
+                <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}><strong>{carrier.cargo_type ?? "Motor Carrier"}</strong> — Verify FMCSA requirements with counsel</p>
+              )}
+            </div>
+            <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "14px 16px" }}>
+              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "6px" }}>What size is this operation?</p>
+              {((carrier.total_drivers ?? 0) > 0 || (carrier.total_trucks ?? 0) > 0) ? (
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>
+                  {carrier.total_drivers ?? 0} driver{(carrier.total_drivers ?? 0) !== 1 ? "s" : ""}, {carrier.total_trucks ?? 0} truck{(carrier.total_trucks ?? 0) !== 1 ? "s" : ""}
+                </p>
+              ) : (
+                <p style={{ fontSize: "12px", color: "#92400e", fontWeight: 500 }}>Fleet size unverified — confirm with FMCSA</p>
+              )}
+            </div>
+          </div>
+          <InfoRow label="Address" value={[carrier.address, carrier.city, stateName(carrier.state), carrier.zip].filter(Boolean).join(", ")} />
+          <InfoRow label="Phone"   value={carrier.phone} />
         </div>
 
         {/* Executive Summary */}
