@@ -26,6 +26,7 @@ type Props = {
 type Bullet = {
   text: string;
   color: "green" | "red" | "amber" | "grey";
+  priority: number; // lower = more important; used to sort when accidentDate is set
 };
 
 const COLOR_MAP: Record<Bullet["color"], string> = {
@@ -35,7 +36,9 @@ const COLOR_MAP: Record<Bullet["color"], string> = {
   grey: "#94a3b8",
 };
 
-function parseDateStr(dateStr: string | undefined): Date | null {
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function parseDateStr(dateStr: string | undefined | null): Date | null {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? null : d;
@@ -51,6 +54,14 @@ function yearsBetween(a: Date, b: Date): number {
   return Math.abs(b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 }
 
+function fmtYear(d: Date): string {
+  return String(d.getUTCFullYear());
+}
+
+function fmtDate(d: Date): string {
+  return `${String(d.getUTCDate()).padStart(2, "0")} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 export default function KeyFindings({
   carrier,
   sms,
@@ -64,8 +75,8 @@ export default function KeyFindings({
 }: Props) {
   const bullets: Bullet[] = [];
 
-  // 1. Carrier type
-  const hasMC = carrier.mc_number && carrier.mc_number !== "MC";
+  // ── helpers ──────────────────────────────────────────────
+  const hasMC = !!(carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC");
   const cargoUpper = (carrier.cargo_type ?? "").toUpperCase();
   const isPrivate =
     (cargoUpper.includes("PRIVATE PROPERTY") || cargoUpper.includes("PRIVATE PASSENGER")) &&
@@ -73,67 +84,80 @@ export default function KeyFindings({
     !cargoUpper.includes("APPLYING FOR MC");
   const isForHire = !isPrivate;
   const isActive = (carrier.status ?? "").toUpperCase() === "ACTIVE";
+
+  const accDate = parseDateStr(accidentDate) ?? null;
+  const cutoff24 = accDate ? subtractMonths(accDate, 24) : null;
+
+  // ── 1. Carrier status (priority 10) ───────────────────────
   bullets.push({
     text: `${isActive ? "Active" : "Inactive"} ${isForHire ? "authorized-for-hire" : "private property"} carrier`,
     color: isActive ? "green" : "amber",
+    priority: 10,
   });
 
-  // 2. Fleet
+  // ── 2. Fleet — always show (priority 11) ─────────────────
   const drivers = carrier.total_drivers ?? null;
   const trucks = carrier.total_trucks ?? null;
   const bothZeroOrNull =
     (drivers === null || drivers === 0) && (trucks === null || trucks === 0);
-  if (!bothZeroOrNull) {
+  if (bothZeroOrNull) {
     bullets.push({
-      text: `${drivers ?? 0} driver${drivers !== 1 ? "s" : ""} and ${trucks ?? 0} truck${trucks !== 1 ? "s" : ""}`,
+      text: "Fleet size unverified — verify with FMCSA",
+      color: "amber",
+      priority: 11,
+    });
+  } else {
+    bullets.push({
+      text: `${drivers ?? 0} driver${drivers !== 1 ? "s" : ""} and ${trucks ?? 0} truck${trucks !== 1 ? "s" : ""} on record`,
       color: "grey",
+      priority: 11,
     });
   }
 
-  // 3. All-time crashes
-  const totalCrashes = crashes.length;
-  if (totalCrashes > 0) {
-    bullets.push({
-      text: `${totalCrashes} historical crash${totalCrashes !== 1 ? "es" : ""} on record`,
-      color: "amber",
-    });
-  }
+  // ── 3. Operating years (priority 12) ─────────────────────
+  const earliestAuthDate = authorityHistory
+    .map((r) => parseDateStr(r.effective_date))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
-  // 4. Fatal crashes
-  const fatalCount = crashes.reduce((sum, c) => sum + (c.fatal || 0), 0);
-  if (fatalCount > 0) {
-    bullets.push({
-      text: `${fatalCount} fatal crash${fatalCount !== 1 ? "es" : ""}`,
-      color: "red",
-    });
-  }
-
-  // 5. Injury crashes
-  const injuryCount = crashes.reduce((sum, c) => sum + (c.injury || 0), 0);
-  if (injuryCount > 0) {
-    bullets.push({
-      text: `${injuryCount} injury crash${injuryCount !== 1 ? "es" : ""}`,
-      color: "amber",
-    });
-  }
-
-  // 6. Inspections — within 24 months before accident date if set, else all
-  let inspectionCount = 0;
-  let inspectionLabel = "";
-  if (accidentDate) {
-    const accDate = parseDateStr(accidentDate);
-    if (accDate) {
-      const cutoff = subtractMonths(accDate, 24);
-      inspectionCount = inspections.filter((insp) => {
-        const d = parseDateStr(insp.inspection_date);
-        if (!d) return false;
-        return d >= cutoff && d <= accDate;
-      }).length;
-      inspectionLabel = "within 24 months before accident";
-    } else {
-      inspectionCount = inspections.length;
-      inspectionLabel = "on record";
+  if (earliestAuthDate) {
+    const now = new Date();
+    const yearsOperating = yearsBetween(earliestAuthDate, now);
+    if (yearsOperating >= 1) {
+      bullets.push({
+        text: `Operating for approximately ${Math.floor(yearsOperating)} year${Math.floor(yearsOperating) !== 1 ? "s" : ""} (first authority on record: ${fmtYear(earliestAuthDate)})`,
+        color: "grey",
+        priority: 12,
+      });
     }
+  }
+
+  // ── 4. Crashes — single combined bullet (priority 1 or 2) ─
+  const totalCrashes = crashes.length;
+  const fatalCount = crashes.reduce((sum, c) => sum + (c.fatal || 0), 0);
+  const injuryCount = crashes.reduce((sum, c) => sum + (c.injury || 0), 0);
+  if (totalCrashes > 0) {
+    const parts: string[] = [];
+    if (fatalCount > 0) parts.push(`${fatalCount} fatal`);
+    if (injuryCount > 0) parts.push(`${injuryCount} with injuries`);
+    const detail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+    bullets.push({
+      text: `${totalCrashes} crash${totalCrashes !== 1 ? "es" : ""} in total${detail}`,
+      color: fatalCount > 0 ? "red" : "amber",
+      priority: fatalCount > 0 ? 1 : 2,
+    });
+  }
+
+  // ── 5. Inspections (priority 3) ───────────────────────────
+  let inspectionCount: number;
+  let inspectionLabel: string;
+  if (accDate && cutoff24) {
+    inspectionCount = inspections.filter((insp) => {
+      const d = parseDateStr(insp.inspection_date);
+      if (!d) return false;
+      return d >= cutoff24 && d <= accDate;
+    }).length;
+    inspectionLabel = "within 24 months before accident";
   } else {
     inspectionCount = inspections.length;
     inspectionLabel = "on record";
@@ -142,79 +166,126 @@ export default function KeyFindings({
     bullets.push({
       text: `${inspectionCount} inspection${inspectionCount !== 1 ? "s" : ""} ${inspectionLabel}`,
       color: "grey",
+      priority: 3,
     });
   }
 
-  // 7. OOS vehicle events — sum oos_vehicles from inspections + oosOrders.length
+  // ── 6. Violations + OOS combined (priority 4) ─────────────
+  const totalViolations = inspections.reduce(
+    (sum, insp) => sum + (insp.total_violations ?? 0),
+    0,
+  );
   const oosFromInspections = inspections.reduce(
     (sum, insp) => sum + (insp.oos_vehicles ?? 0),
     0,
   );
   const oosTotal = oosFromInspections + oosOrders.length;
-  if (oosTotal > 0) {
+  if (totalViolations > 0 || oosTotal > 0) {
+    const parts: string[] = [];
+    if (totalViolations > 0) parts.push(`${totalViolations} violation${totalViolations !== 1 ? "s" : ""}`);
+    if (oosTotal > 0) parts.push(`${oosTotal} out-of-service event${oosTotal !== 1 ? "s" : ""}`);
     bullets.push({
-      text: `${oosTotal} vehicle out-of-service event${oosTotal !== 1 ? "s" : ""}`,
-      color: "red",
+      text: parts.join(", "),
+      color: oosTotal > 0 ? "red" : "amber",
+      priority: 4,
     });
   }
 
-  // 8. Insurance
+  // ── 7. Insurance — status summary (priority 5) ───────────
   if (insurance.length === 0) {
-    if (hasMC) {
+    bullets.push({
+      text: hasMC
+        ? "No insurance records found — for-hire carriers must maintain FMCSA filing"
+        : "No FMCSA insurance filing records located",
+      color: hasMC ? "red" : "grey",
+      priority: 5,
+    });
+  } else {
+    const hasActive = insurance.some(
+      (pol) =>
+        pol.status?.toLowerCase().includes("active") ||
+        (!pol.cancellation_date && pol.effective_date),
+    );
+    const hasCancelled = insurance.some(
+      (pol) =>
+        pol.status?.toLowerCase().includes("cancel") ||
+        pol.status?.toLowerCase().includes("term"),
+    );
+    if (hasActive) {
       bullets.push({
-        text: "No insurance records in database — verify with FMCSA (data may be incomplete)",
-        color: "amber",
+        text: "Active insurance policy on file",
+        color: "green",
+        priority: 5,
+      });
+    } else if (hasCancelled) {
+      bullets.push({
+        text: "Insurance gaps detected — no confirmed active policy",
+        color: "red",
+        priority: 5,
       });
     } else {
       bullets.push({
-        text: "No FMCSA insurance filing records located",
+        text: `${insurance.length} insurance filing${insurance.length !== 1 ? "s" : ""} on record`,
         color: "grey",
+        priority: 5,
       });
     }
-  } else {
-    bullets.push({
-      text: `${insurance.length} insurance filing${insurance.length !== 1 ? "s" : ""} on record`,
-      color: "grey",
-    });
   }
 
-  // 9. Authority
+  // ── 8. Authority — status summary (priority 6) ────────────
+  const nonDiscontinuedRevocations = alerts.filter(
+    (a) =>
+      a.event_type === "INVOLUNTARY_REVOCATION" &&
+      !(a.description ?? "").toLowerCase().includes("discontinued"),
+  );
   if (authorityHistory.length === 0) {
-    if (hasMC) {
-      bullets.push({
-        text: "No authority records in database — verify with FMCSA",
-        color: "amber",
-      });
-    } else {
-      bullets.push({
-        text: "No operating authority records located",
-        color: "grey",
-      });
-    }
+    bullets.push({
+      text: hasMC
+        ? "No authority records in database — verify with FMCSA"
+        : "No operating authority records located",
+      color: hasMC ? "amber" : "grey",
+      priority: 6,
+    });
+  } else if (nonDiscontinuedRevocations.length > 0 && !isActive) {
+    bullets.push({
+      text: "Authority revoked — carrier is no longer active",
+      color: "red",
+      priority: 6,
+    });
+  } else if (nonDiscontinuedRevocations.length > 0 && isActive) {
+    bullets.push({
+      text: "Active authority on file — prior revocation history exists",
+      color: "amber",
+      priority: 6,
+    });
   } else {
     bullets.push({
-      text: `${authorityHistory.length} authority record${authorityHistory.length !== 1 ? "s" : ""} on file`,
-      color: "grey",
+      text: "Active operating authority on file",
+      color: "green",
+      priority: 6,
     });
   }
 
-  // 10. Safety rating
+  // ── 9. Safety rating (priority 13) ────────────────────────
   if (carrier.safety_rating) {
     const ratingDate = parseDateStr(carrier.safety_rating_date);
     const now = new Date();
-    let text = `Latest safety rating: ${carrier.safety_rating}`;
-    if (ratingDate && yearsBetween(ratingDate, now) > 10) {
+    let text = `Safety rating: ${carrier.safety_rating}`;
+    let color: Bullet["color"] = "grey";
+    if (ratingDate) {
+      const reviewYear = ratingDate.getUTCFullYear();
       const yearsOld = Math.floor(yearsBetween(ratingDate, now));
-      text += ` — review date is ${yearsOld} years old`;
+      text += ` (${fmtDate(ratingDate)})`;
+      if (yearsOld > 10) {
+        text += ` — rating is ${yearsOld} years old`;
+        color = "amber";
+      }
+      if (carrier.safety_rating.toUpperCase() === "UNSATISFACTORY") color = "red";
     }
-    bullets.push({
-      text,
-      color:
-        ratingDate && yearsBetween(ratingDate, now) > 10 ? "amber" : "grey",
-    });
+    bullets.push({ text, color, priority: 13 });
   }
 
-  // 11. SMS alerts — count all *_alert booleans that are true
+  // ── 10. SMS alerts — shortened (priority 7) ───────────────
   if (sms) {
     const alertFields: (keyof SmsScores)[] = [
       "unsafe_driving_alert",
@@ -228,11 +299,17 @@ export default function KeyFindings({
     const alertCount = alertFields.filter((field) => sms[field] === true).length;
     if (alertCount > 0) {
       bullets.push({
-        text: `${alertCount} Safety Measurement System (SMS) Behavior Analysis and Safety Improvement Category (BASIC) alert${alertCount !== 1 ? "s" : ""} above threshold`,
+        text: `${alertCount} SMS safety category alert${alertCount !== 1 ? "s" : ""} above FMCSA threshold`,
         color: "red",
+        priority: 7,
       });
     }
   }
+
+  // ── Sort + cap ────────────────────────────────────────────
+  const sorted = accDate
+    ? [...bullets].sort((a, b) => a.priority - b.priority).slice(0, 8)
+    : bullets.slice(0, 8);
 
   return (
     <div
@@ -256,7 +333,7 @@ export default function KeyFindings({
         Key Findings
       </div>
       <div>
-        {bullets.map((bullet, i) => (
+        {sorted.map((bullet, i) => (
           <div
             key={i}
             style={{

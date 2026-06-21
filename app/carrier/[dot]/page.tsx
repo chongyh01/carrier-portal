@@ -144,38 +144,50 @@ async function fetchRejectedInsurance(dot: string): Promise<RejectedInsurance[]>
   return res.json();
 }
 
-async function fetchSuspectSuccessors(dot: string, address?: string, phone?: string): Promise<SuspectSuccessor[]> {
+async function fetchSuspectSuccessors(
+  dot: string,
+  revocationDate: string,
+  address?: string,
+  phone?: string,
+): Promise<SuspectSuccessor[]> {
   const results: Map<string, SuspectSuccessor> = new Map();
 
-  // --- 1. Address and phone matches ---
-  const orParts: string[] = [];
+  // Fix 4: Split address and phone into separate fetches so each match
+  // can be correctly labelled (combined OR query mislabels phone-only matches as "Same address").
+
+  // --- 1a. Address matches ---
   if (address && address.trim().length > 5) {
-    orParts.push(`address=ilike.${encodeURIComponent('%' + address.trim() + '%')}`);
-  }
-  if (phone && phone.replace(/\D/g, '').length > 7) {
-    orParts.push(`phone=eq.${encodeURIComponent(phone.trim())}`);
-  }
-  if (orParts.length > 0) {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&dot_number=neq.${dot}&or=(${orParts.join(',')})&limit=20`,
+      `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&dot_number=neq.${dot}&address=ilike.${encodeURIComponent('%' + address.trim() + '%')}&limit=20`,
       { headers: HEADERS, cache: 'no-store' }
     );
     if (res.ok) {
       const data: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await res.json();
       for (const c of data) {
         if (!results.has(c.dot_number)) {
-          // Address takes priority in labelling; phone-only if no address filter
-          const connectionType = address && address.trim().length > 5
-            ? 'Same address'
-            : 'Same phone number';
-          results.set(c.dot_number, { ...c, connection_type: connectionType });
+          results.set(c.dot_number, { ...c, connection_type: 'Same address' });
+        }
+      }
+    }
+  }
+
+  // --- 1b. Phone matches ---
+  if (phone && phone.replace(/\D/g, '').length > 7) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&dot_number=neq.${dot}&phone=eq.${encodeURIComponent(phone.trim())}&limit=20`,
+      { headers: HEADERS, cache: 'no-store' }
+    );
+    if (res.ok) {
+      const data: Array<{ dot_number: string; legal_name: string; mc_number?: string; status?: string }> = await res.json();
+      for (const c of data) {
+        if (!results.has(c.dot_number)) {
+          results.set(c.dot_number, { ...c, connection_type: 'Same phone number' });
         }
       }
     }
   }
 
   // --- 2. BOC3 process agent matches ---
-  // Fetch this carrier's BOC3 agents
   const boc3Res = await fetch(
     `${SUPABASE_URL}/rest/v1/boc3?select=company_name&dot_number=eq.${dot}&company_name=not.is.null&limit=5`,
     { headers: HEADERS, cache: 'no-store' }
@@ -184,7 +196,6 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
     const myBoc3: Array<{ company_name: string }> = await boc3Res.json();
     const myAgents = myBoc3.map(b => b.company_name).filter(Boolean);
     if (myAgents.length > 0) {
-      // Find other DOTs sharing the same BOC3 agent
       const agentFilter = myAgents.map(a => `company_name=eq.${encodeURIComponent(a)}`).join(',');
       const sharedRes = await fetch(
         `${SUPABASE_URL}/rest/v1/boc3?select=dot_number&dot_number=neq.${dot}&or=(${agentFilter})&limit=50`,
@@ -194,7 +205,6 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
         const sharedAgents: Array<{ dot_number: string }> = await sharedRes.json();
         const boc3DotNumbers = [...new Set(sharedAgents.map(b => b.dot_number))].filter(d => !results.has(d));
         if (boc3DotNumbers.length > 0) {
-          // Batch fetch carrier details for these DOTs
           const dotFilter = boc3DotNumbers.slice(0, 30).map(d => `dot_number=eq.${d}`).join(',');
           const carriersRes = await fetch(
             `${SUPABASE_URL}/rest/v1/carriers?select=dot_number,legal_name,mc_number,status&or=(${dotFilter})&limit=30`,
@@ -213,21 +223,38 @@ async function fetchSuspectSuccessors(dot: string, address?: string, phone?: str
     }
   }
 
-  // Populate first_authority_date for each suspect
-  for (const [dotNum, succ] of results.entries()) {
-    const authRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/authority_history?dot_number=eq.${dotNum}&status=ilike.*GRANT*&select=effective_date&order=effective_date.asc&limit=1`,
-      { headers: HEADERS, cache: 'no-store' }
-    );
-    if (authRes.ok) {
-      const authData: Array<{ effective_date: string }> = await authRes.json();
-      if (authData.length > 0) {
-        results.set(dotNum, { ...succ, first_authority_date: authData[0].effective_date });
+  // Fix 1: Filter candidates by revocationDate — only keep carriers that obtained
+  // a new authority grant AFTER the revocation. Carriers registered before the
+  // revocation sharing an address are not chameleons; they are co-located businesses.
+  const filteredDots: string[] = [];
+  for (const dotNum of results.keys()) {
+    try {
+      const authRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/authority_history?dot_number=eq.${dotNum}&status=ilike.*GRANT*&effective_date=gt.${encodeURIComponent(revocationDate)}&select=effective_date&order=effective_date.asc&limit=1`,
+        { headers: HEADERS, cache: 'no-store' }
+      );
+      if (authRes.ok) {
+        const authData: Array<{ effective_date: string }> = await authRes.json();
+        if (authData.length > 0) {
+          // This candidate registered after the revocation — keep it and store the date
+          const succ = results.get(dotNum)!;
+          results.set(dotNum, { ...succ, first_authority_date: authData[0].effective_date });
+          filteredDots.push(dotNum);
+        }
       }
+    } catch {
+      // skip on error
     }
   }
 
-  return Array.from(results.values()).slice(0, 20);
+  // Remove candidates that didn't pass the revocationDate filter
+  for (const dotNum of results.keys()) {
+    if (!filteredDots.includes(dotNum)) {
+      results.delete(dotNum);
+    }
+  }
+
+  return Array.from(results.values()).slice(0, 10);
 }
 
 export default async function CarrierDetailPage({ params }: { params: Promise<{ dot: string }> }) {
@@ -248,11 +275,23 @@ export default async function CarrierDetailPage({ params }: { params: Promise<{ 
 
   if (!carrier) notFound();
 
-  // Only run chameleon detection for carriers with revocation history
-  const hasRevocation = alerts.some(a => a.event_type === 'INVOLUNTARY_REVOCATION');
-  const suspectSuccessors = hasRevocation
-    ? await fetchSuspectSuccessors(dot, carrier.address, carrier.phone)
-    : [];
+  // Fix 2: Exclude DISCONTINUED revocations (reversed) — these are not real revocations.
+  // Fix 3: Extract the most recent qualifying revocation date to pass as the filter boundary.
+  const qualifyingRevocations = alerts.filter(
+    a =>
+      a.event_type === 'INVOLUNTARY_REVOCATION' &&
+      !(a.description ?? '').toLowerCase().includes('discontinued'),
+  );
+  const hasRevocation = qualifyingRevocations.length > 0;
+  const revocationDate = qualifyingRevocations
+    .map(a => a.event_date ?? '')
+    .filter(Boolean)
+    .sort()
+    .pop() ?? '';
+  const suspectSuccessors =
+    hasRevocation && revocationDate
+      ? await fetchSuspectSuccessors(dot, revocationDate, carrier.address, carrier.phone)
+      : [];
 
   return (
     <CarrierDetailView
