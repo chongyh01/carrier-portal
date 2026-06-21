@@ -1,4 +1,3 @@
-@AGENTS.md
 @MASTER_INSTRUCTIONS.md
 
 # Carrier Check USA (carriercheckusa.com)

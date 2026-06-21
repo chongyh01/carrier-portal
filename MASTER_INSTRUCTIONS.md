@@ -28,7 +28,6 @@
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
 | Missing inspection dates | Inspection table | Inspections with null inspection_date excluded from all time-bucket views (inRange returns false for null); data issue not yet diagnosed |
-| `carrier-portal/AGENTS.md` flagged as potential prompt injection | Repo root | Needs manual review before deletion — do not delete blindly |
 | `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | Not yet diagnosed; violations show without inspection link |
 
 ### Fixed
