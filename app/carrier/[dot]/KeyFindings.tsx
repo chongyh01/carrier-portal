@@ -228,7 +228,7 @@ export default function KeyFindings({
     const alertCount = alertFields.filter((field) => sms[field] === true).length;
     if (alertCount > 0) {
       bullets.push({
-        text: `${alertCount} FMCSA SMS BASIC alert${alertCount !== 1 ? "s" : ""} above threshold`,
+        text: `${alertCount} Safety Measurement System (SMS) Behavior Analysis and Safety Improvement Category (BASIC) alert${alertCount !== 1 ? "s" : ""} above threshold`,
         color: "red",
       });
     }

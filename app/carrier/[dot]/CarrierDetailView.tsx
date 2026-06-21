@@ -436,7 +436,7 @@ function TimeBucketSection({
                 <SubHeader title="Violations" />
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                    <thead><TH cols={["Date", "Category", "CFR Section", "Unit", "OOS"]} /></thead>
+                    <thead><TH cols={["Date", "Category", "CFR Section", "Unit", "Out of Service (OOS)"]} /></thead>
                     <tbody>
                       {bucketViolations.map((v, i) => {
                         const vx = v as Violation & { inspection_date?: string };
@@ -514,7 +514,7 @@ function TimeBucketSection({
             {/* OOS Orders & Reinstatements */}
             {bucketOos.length > 0 && (
               <>
-                <SubHeader title="OOS Orders & Reinstatements" />
+                <SubHeader title="Out-of-Service (OOS) Orders & Reinstatements" />
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                     <thead><TH cols={["Order Date", "Reason", "Status", "Reinstated"]} /></thead>
@@ -596,7 +596,7 @@ function TimeBucketSection({
                 <SubHeader title="Inspection History" />
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                    <thead><TH cols={["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"]} /></thead>
+                    <thead><TH cols={["Date", "State", "Level", "Violations", "Out of Service Vehicles", "Out of Service Drivers"]} /></thead>
                     <tbody>
                       {bucketInspections.map((insp, i) => {
                         const hasOos    = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
@@ -664,26 +664,26 @@ function TimeBucketSection({
             {/* SMS Safety Scores */}
             {smsInBucket && sms ? (
               <>
-                <SubHeader title="SMS Safety Scores" />
+                <SubHeader title="Safety Measurement System (SMS) Scores" />
                 {sms.score_date && (
                   <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "4px" }}>
-                    SMS Period: {fmtDate(sms.score_date)}
+                    Safety Measurement System (SMS) Period: {fmtDate(sms.score_date)}
                   </p>
                 )}
                 <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px", letterSpacing: "1px" }}>PERCENTILE RANKING (≥75 = ALERT)</p>
-                <ScoreRow label="UNSAFE DRIVING"        value={sms.unsafe_driving}               alert={sms.unsafe_driving_alert} />
-                <ScoreRow label="CRASH INDICATOR"       value={sms.crash_indicator}              alert={sms.crash_indicator_alert} />
-                <ScoreRow label="DRIVER FITNESS"        value={sms.driver_fitness}               alert={sms.driver_fitness_alert} />
-                <ScoreRow label="VEHICLE MAINTENANCE"   value={sms.vehicle_maintenance}          alert={sms.vehicle_maintenance_alert} />
-                <ScoreRow label="CONTROLLED SUBSTANCES" value={sms.controlled_substances_alcohol} alert={sms.controlled_substances_alcohol_alert} />
-                <ScoreRow label="HOS COMPLIANCE"        value={sms.hours_of_service_compliance}  alert={sms.hours_of_service_compliance_alert} />
-                <ScoreRow label="HAZARDOUS MATERIALS"   value={sms.hazardous_materials}          alert={sms.hazardous_materials_alert} />
+                <ScoreRow label="UNSAFE DRIVING"                             value={sms.unsafe_driving}               alert={sms.unsafe_driving_alert} />
+                <ScoreRow label="CRASH INDICATOR"                            value={sms.crash_indicator}              alert={sms.crash_indicator_alert} />
+                <ScoreRow label="DRIVER FITNESS"                             value={sms.driver_fitness}               alert={sms.driver_fitness_alert} />
+                <ScoreRow label="VEHICLE MAINTENANCE"                        value={sms.vehicle_maintenance}          alert={sms.vehicle_maintenance_alert} />
+                <ScoreRow label="CONTROLLED SUBSTANCES"                      value={sms.controlled_substances_alcohol} alert={sms.controlled_substances_alcohol_alert} />
+                <ScoreRow label="HOURS OF SERVICE (HOS) COMPLIANCE"         value={sms.hours_of_service_compliance}  alert={sms.hours_of_service_compliance_alert} />
+                <ScoreRow label="HAZARDOUS MATERIALS"                        value={sms.hazardous_materials}          alert={sms.hazardous_materials_alert} />
               </>
             ) : !sms ? (
               <>
-                <SubHeader title="SMS Safety Scores" />
+                <SubHeader title="Safety Measurement System (SMS) Scores" />
                 <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontStyle: "italic" }}>
-                  No SMS scores published by FMCSA for this carrier. Possible reasons include insufficient inspection volume or inactive carrier status.
+                  No Safety Measurement System (SMS) scores published by the Federal Motor Carrier Safety Administration (FMCSA) for this carrier. Possible reasons include insufficient inspection volume or inactive carrier status.
                 </p>
               </>
             ) : null}
@@ -994,10 +994,10 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
       : authorityDerived.status === "not_required" ? "operating authority was NOT REQUIRED"
       : "operating authority was INACTIVE";
     const insStr =
-      insuranceDerived.status === "active"         ? "BI&PD insurance was on file"
+      insuranceDerived.status === "active"         ? "Bodily Injury & Property Damage (BI&PD) insurance was on file"
       : insuranceDerived.status === "not_required" ? "insurance filing not required"
       : insuranceDerived.status === "unknown"      ? "insurance status unverified from available records"
-      : "no active BI&PD insurance was on file";
+      : "no active BI&PD (Bodily Injury & Property Damage) insurance was on file";
     summaryLines.push(`As of ${fmtDate(accidentDate)}: ${authStr}; ${insStr}.`);
   } else {
     const isPrivate = isLikelyPrivateCarrier(carrier);
@@ -1011,8 +1011,8 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
         (i.policy_type === "91" || i.policy_type === "91X" || i.policy_type === "82") && !i.cancellation_date
       );
       const insStr = activeIns
-        ? `BI&PD insurance on file (${activeIns.insurer_name ?? "insurer on record"})`
-        : "no active BI&PD insurance policy found in imported records";
+        ? `Bodily Injury & Property Damage (BI&PD) insurance on file (${activeIns.insurer_name ?? "insurer on record"})`
+        : "no active BI&PD (Bodily Injury & Property Damage) insurance policy found in imported records";
       summaryLines.push(`${carrier.legal_name} holds ${authStatus} FMCSA operating authority. ${insStr}.`);
     }
   }
@@ -1216,7 +1216,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
             {accidentInLapse && (
               <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
                 <p style={{ fontSize: "12px", color: "#991b1b", fontFamily: "'DM Mono', monospace" }}>
-                  ⚠ Insurance lapse detected: accident date falls within a {accidentInLapse.gapDays}-day gap in BI&PD coverage ({fmtDate(accidentInLapse.from)} – {fmtDate(accidentInLapse.to)}). No active BI&PD policy found for this period in available records.
+                  ⚠ Insurance lapse detected: accident date falls within a {accidentInLapse.gapDays}-day gap in Bodily Injury & Property Damage (BI&PD) coverage ({fmtDate(accidentInLapse.from)} – {fmtDate(accidentInLapse.to)}). No active BI&PD policy found for this period in available records.
                 </p>
               </div>
             )}
