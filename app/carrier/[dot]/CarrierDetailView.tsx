@@ -1636,26 +1636,45 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
         )}
 
         {/* Section — BOC3 Process Agent */}
-        {boc3.length > 0 && (
+        {boc3.length > 0 ? (
           <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>Process Agent (BOC-3)</h2>
-            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
-              The BOC-3 agent is authorized to accept legal papers on behalf of this carrier in any US state. Serve litigation documents on this entity.
+            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>Process Agent (BOC-3) — Who to Serve Legal Papers On</h2>
+            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "12px", lineHeight: "1.5" }}>
+              Federal law requires for-hire carriers to designate a process agent in each state. Serving this agent initiates legal process against the carrier.
             </p>
+            {boc3.length > 1 && (
+              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px" }}>
+                <p style={{ fontSize: "12px", color: "#1e40af", margin: 0 }}>
+                  {boc3.length} process agents on file — serve the agent in the state where the accident occurred.
+                </p>
+              </div>
+            )}
             {boc3.map((agent, i) => (
               <div key={i} style={{ padding: "12px 0", borderBottom: i < boc3.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Serve legal papers on</p>
-                <p style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a", marginBottom: "4px" }}>{agent.company_name ?? "—"}</p>
-                {agent.attention_to && <p style={{ fontSize: "12px", color: "#64748b" }}>Attn: {agent.attention_to}</p>}
-                <p style={{ fontSize: "12px", color: "#64748b" }}>
-                  {[agent.address, agent.city, agent.state, agent.zip_code].filter(Boolean).join(", ")}
+                <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Serve legal papers on</p>
+                <p style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{agent.company_name ?? "—"}</p>
+                {agent.attention_to && (
+                  <p style={{ fontSize: "12px", color: "#64748b", marginBottom: "2px" }}>Contact: {agent.attention_to}</p>
+                )}
+                <p style={{ fontSize: "12px", color: "#64748b", marginBottom: agent.state ? "2px" : "0" }}>
+                  Address: {[agent.address, agent.city, agent.state, agent.zip_code].filter(Boolean).join(", ")}
                   {agent.country && agent.country !== "US" && ` (${agent.country})`}
                 </p>
+                {agent.state && (
+                  <p style={{ fontSize: "12px", color: "#64748b" }}>State coverage: {agent.state}</p>
+                )}
               </div>
             ))}
             <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA BOC-3 Filing</p>
           </div>
-        )}
+        ) : (carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC") ? (
+          <div style={{ background: "#fffbeb", borderRadius: "12px", padding: "20px 24px", border: "1px solid #fcd34d", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+            <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#92400e", marginBottom: "6px" }}>Process Agent (BOC-3) — Who to Serve Legal Papers On</h2>
+            <p style={{ fontSize: "13px", color: "#92400e", lineHeight: "1.5", margin: 0 }}>
+              No BOC-3 process agent on file. Carrier may not have been authorized to operate for hire. Verify with FMCSA before serving.
+            </p>
+          </div>
+        ) : null}
 
         {/* Section — Rejected Insurance Filings */}
         {rejectedInsurance.length > 0 && (
