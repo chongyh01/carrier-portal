@@ -616,23 +616,20 @@ function inRange(dateStr: string | null | undefined, start: string | null, end: 
 
 // ─── Sub-section header ──────────────────────────────────────
 
-function SubHeader({ title }: { title: string }) {
+function SubHeader({ title, source }: { title: string; source?: string }) {
 
   return (
 
-    <h3 style={{
-
-      fontSize: "14px", fontWeight: 600, color: "#0f172a",
-
-      borderBottom: "1px solid #f1f5f9", paddingBottom: "8px",
-
-      marginTop: "24px", marginBottom: "12px",
-
-    }}>
-
-      {title}
-
-    </h3>
+    <div style={{ marginTop: "24px", marginBottom: "12px", borderBottom: "1px solid #f1f5f9", paddingBottom: "8px" }}>
+      <h3 style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
+        {title}
+      </h3>
+      {source && (
+        <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "2px" }}>
+          {source}
+        </p>
+      )}
+    </div>
 
   );
 
@@ -892,7 +889,20 @@ function TimeBucketSection({
 
                 <>
 
-                  <SubHeader title="Crash History" />
+                  <SubHeader title="Crash History" source="Source: FMCSA Crash – All With History (yp3c-umj5) · Updated daily" />
+
+                  {/* Lawyer framing callout */}
+                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "12px 16px", marginBottom: "12px" }}>
+                    <p style={{ fontSize: "12px", color: "#1e40af", lineHeight: "1.6", margin: 0 }}>
+                      Has this carrier had serious accidents in this period?{" "}
+                      {crashFatal > 0
+                        ? <strong>Yes — {n} crash{n !== 1 ? "es" : ""} including {crashFatal} fatal.</strong>
+                        : n > 0
+                        ? <strong>Yes — {n} crash{n !== 1 ? "es" : ""}.</strong>
+                        : <strong>No crashes found in this period.</strong>
+                      }
+                    </p>
+                  </div>
 
                   {/* Crash Summary Card */}
 
@@ -919,6 +929,46 @@ function TimeBucketSection({
                     )}
 
                   </div>
+
+                  {/* State counts + patterns */}
+                  {(() => {
+                    const stateCnts: Record<string, number> = {};
+                    for (const c of bucketCrashes) { if (c.state) stateCnts[c.state] = (stateCnts[c.state] ?? 0) + 1; }
+                    const topStatesList = Object.entries(stateCnts).sort((a,b) => b[1]-a[1]).slice(0,5);
+                    const stateCluster = topStatesList.find(([,cnt]) => cnt >= 2);
+                    const firstFatal = bucketCrashes.find(c => (c.fatal ?? 0) > 0);
+                    const crashNear90 = accidentDate ? bucketCrashes.find(c => {
+                      if (!c.crash_date || !accidentDate) return false;
+                      const days = Math.round((new Date(accidentDate+'T00:00:00Z').getTime() - new Date(c.crash_date+'T00:00:00Z').getTime()) / 86400000);
+                      return days >= 0 && days <= 90;
+                    }) : null;
+                    const nearDays = crashNear90 && accidentDate ? Math.round((new Date(accidentDate+'T00:00:00Z').getTime() - new Date(crashNear90.crash_date!+'T00:00:00Z').getTime()) / 86400000) : null;
+                    if (!stateCluster && !firstFatal && !crashNear90 && topStatesList.length === 0) return null;
+                    return (
+                      <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        {topStatesList.length > 0 && (
+                          <p style={{ fontSize: "12px", color: "#374151", fontFamily: "'DM Mono', monospace" }}>
+                            States: {topStatesList.map(([s,cnt]) => `${stateName(s)} (${cnt})`).join(", ")}
+                          </p>
+                        )}
+                        {stateCluster && (
+                          <p style={{ fontSize: "12px", color: "#92400e", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>
+                            ⚠ Crash cluster: {stateCluster[1]} crashes in {stateName(stateCluster[0])}
+                          </p>
+                        )}
+                        {firstFatal && (
+                          <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                            ⚠ Fatal crash: {fmtDate(firstFatal.crash_date)}{firstFatal.state ? `, ${stateName(firstFatal.state)}` : ""}
+                          </p>
+                        )}
+                        {crashNear90 && nearDays !== null && (
+                          <p style={{ fontSize: "12px", color: "#0f172a", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
+                            Crash occurred {nearDays === 0 ? "on" : `${nearDays} day${nearDays !== 1 ? "s" : ""} before`} accident date
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
 
@@ -972,11 +1022,11 @@ function TimeBucketSection({
 
                             <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(c.state)}</td>
 
-                            <td style={{ padding: "8px 12px", color: (c.fatal ?? 0) > 0 ? "#ef4444" : "#374151", fontWeight: (c.fatal ?? 0) > 0 ? 700 : 400 }}>{c.fatal}</td>
+                            <td style={{ padding: "8px 12px" }}>{(c.fatal ?? 0) > 0 ? <span style={{color:"#ef4444",fontWeight:700}}>✓ {c.fatal}</span> : <span style={{color:"#94a3b8"}}>—</span>}</td>
 
-                            <td style={{ padding: "8px 12px", color: (c.injury ?? 0) > 0 ? "#f97316" : "#374151" }}>{c.injury}</td>
+                            <td style={{ padding: "8px 12px" }}>{(c.injury ?? 0) > 0 ? c.injury : <span style={{color:"#94a3b8"}}>—</span>}</td>
 
-                            <td style={{ padding: "8px 12px", color: "#374151" }}>{c.towaway}</td>
+                            <td style={{ padding: "8px 12px" }}>{(c.towaway ?? 0) > 0 ? c.towaway : <span style={{color:"#94a3b8"}}>—</span>}</td>
 
                             <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{c.report_number ?? "—"}</td>
 
@@ -1001,7 +1051,7 @@ function TimeBucketSection({
                         {/* Violations */}
             {bucketViolations.length > 0 && (
               <>
-                <SubHeader title="Violations" />
+                <SubHeader title="Violations" source="Source: FMCSA Vehicle Violations (876r-jsdb) · Updated daily" />
                 {(() => {
                   const totalViolations = bucketViolations.length;
                   const oosCount = bucketViolations.filter(v => v.oos_indicator === "Y").length;
@@ -1167,7 +1217,7 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Insurance History" />
+                <SubHeader title="Insurance History" source="Source: FMCSA Insurance History (q36i-skfe) + Active Insurance (ypjt-5ydn) · Updated daily" />
 
                 {/* Insurance Summary card — BI&PD only (91, 91X, 82) */}
 
@@ -1357,7 +1407,7 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Out-of-Service (OOS) Orders & Reinstatements" />
+                <SubHeader title="Out-of-Service (OOS) Orders & Reinstatements" source="Source: FMCSA Out-of-Service Orders · Updated daily" />
 
                 {/* OOS Summary Card */}
 
@@ -1421,6 +1471,31 @@ function TimeBucketSection({
 
                         </li>
 
+                        {(() => {
+                          const datedOos = bucketOos.filter(o => o.order_date && !o.order_date.startsWith("1970"));
+                          if (datedOos.length < 2) return null;
+                          const sorted = [...datedOos].sort((a,b) => (a.order_date ?? "").localeCompare(b.order_date ?? ""));
+                          return (
+                            <li style={{ fontSize: "12px", color: "#374151", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
+                              <span style={{ position: "absolute", left: 0, color: "#64748b" }}>•</span>
+                              Date range: {fmtDate(sorted[0].order_date)} – {fmtDate(sorted[sorted.length-1].order_date)}
+                            </li>
+                          );
+                        })()}
+                        {accidentDate && bucketOos.some(o => {
+                          if (!o.order_date || !accidentDate) return false;
+                          const oDate = dateOnly(o.order_date);
+                          if (!oDate) return false;
+                          const twoYearsBefore = new Date(accidentDate + "T00:00:00Z");
+                          twoYearsBefore.setUTCFullYear(twoYearsBefore.getUTCFullYear() - 2);
+                          return oDate >= twoYearsBefore.toISOString().slice(0,10);
+                        }) && (
+                          <li style={{ fontSize: "12px", color: "#92400e", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
+                            <span style={{ position: "absolute", left: 0, color: "#92400e" }}>⚠</span>
+                            Recent OOS orders within investigation period (within 2 years of accident date)
+                          </li>
+                        )}
+
                       </ul>
 
                     </div>
@@ -1481,13 +1556,19 @@ function TimeBucketSection({
 
 
 
+            {bucketOos.length === 0 && (
+              <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "16px", fontStyle: "italic" }}>
+                No out-of-service orders found in FMCSA records.
+              </p>
+            )}
+
             {/* Revocation History */}
 
             {bucketRevocations.length > 0 && (
 
               <>
 
-                <SubHeader title="Revocation History" />
+                <SubHeader title="Revocation History" source="Source: FMCSA Revocation History · Updated daily" />
 
                 <div style={{ overflowX: "auto" }}>
 
@@ -1527,7 +1608,7 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Authority History" />
+                <SubHeader title="Authority History" source="Source: FMCSA Authority History · Updated daily" />
 
                 {/* Authority Summary card */}
                 {(() => {
@@ -1578,7 +1659,7 @@ function TimeBucketSection({
 
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
 
-                    <thead><TH cols={["Type", "Status", "Effective", "Revoked", "Reason"]} /></thead>
+                    <thead><TH cols={["Type", "Status", "Effective", "Revoked", "Duration", "Reason"]} /></thead>
 
                     <tbody>
 
@@ -1586,7 +1667,7 @@ function TimeBucketSection({
 
                         <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
 
-                          <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{a.authority_type ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{authorityTypeLabel(a.authority_type)}</td>
 
                           <td style={{ padding: "8px 12px" }}>
 
@@ -1604,7 +1685,11 @@ function TimeBucketSection({
 
                           <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(a.effective_date)}</td>
 
-                          <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(a.revocation_date)}</td>
+                          <td style={{ padding: "8px 12px", color: a.revocation_date ? "#ef4444" : "#94a3b8" }}>
+                            {a.revocation_date ? fmtDate(a.revocation_date) : <span style={{color:"#16a34a",fontFamily:"'DM Mono',monospace",fontSize:"11px"}}>Active (no end date)</span>}
+                          </td>
+
+                          <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px", fontFamily: "'DM Mono', monospace" }}>{durationLabel(a.effective_date, a.revocation_date)}</td>
 
                           <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "12px" }}>{a.reason ?? "—"}</td>
 
@@ -1630,7 +1715,7 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Inspection History" />
+                <SubHeader title="Inspection History" source="Source: FMCSA Vehicle Inspections (fx4q-ay7w) · Updated daily" />
 
                 {(() => {
 
@@ -1818,7 +1903,7 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Safety Rating" />
+                <SubHeader title="Safety Rating" source="Source: FMCSA Carrier Census (az4n-8mr2) · Updated daily" />
 
                 {carrier.safety_rating && (
 
@@ -1952,6 +2037,12 @@ function TimeBucketSection({
 
                 })()}
 
+                {!carrier.safety_rating && (
+                  <p style={{ fontSize: "13px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontStyle: "italic", marginTop: "8px" }}>
+                    No safety rating assigned by FMCSA for this carrier.
+                  </p>
+                )}
+
               </>
 
             )}
@@ -1964,7 +2055,11 @@ function TimeBucketSection({
 
               <>
 
-                <SubHeader title="Safety Measurement System (SMS) Scores" />
+                <SubHeader title="Safety Measurement System (SMS) Scores" source="Source: FMCSA Safety Measurement System · Updated daily" />
+
+                <p style={{ fontSize: "12px", color: "#374151", marginBottom: "8px" }}>
+                  Safety Measurement System (SMS) Scores — FMCSA analysis of carrier safety behaviors across 7 BASIC categories.
+                </p>
 
                 {sms.score_date && (
 
@@ -1975,6 +2070,30 @@ function TimeBucketSection({
                   </p>
 
                 )}
+
+                {(() => {
+                  const smsFields = [
+                    { val: sms.unsafe_driving, alert: sms.unsafe_driving_alert },
+                    { val: sms.crash_indicator, alert: sms.crash_indicator_alert },
+                    { val: sms.driver_fitness, alert: sms.driver_fitness_alert },
+                    { val: sms.vehicle_maintenance, alert: sms.vehicle_maintenance_alert },
+                    { val: sms.controlled_substances_alcohol, alert: sms.controlled_substances_alcohol_alert },
+                    { val: sms.hours_of_service_compliance, alert: sms.hours_of_service_compliance_alert },
+                    { val: sms.hazardous_materials, alert: sms.hazardous_materials_alert },
+                  ];
+                  const aboveThreshold = smsFields.filter(f => f.val !== null && f.val !== undefined && f.val > 0 && (f.alert ?? (f.val >= ALERT_THRESHOLD)));
+                  const n = aboveThreshold.length;
+                  const cardBg = n >= 3 ? "#fef2f2" : n >= 1 ? "#fffbeb" : "#f0fdf4";
+                  const cardBorder = n >= 3 ? "#fecaca" : n >= 1 ? "#fde68a" : "#bbf7d0";
+                  const cardColor = n >= 3 ? "#991b1b" : n >= 1 ? "#92400e" : "#166534";
+                  return (
+                    <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: "8px", padding: "10px 14px", marginBottom: "12px" }}>
+                      <p style={{ fontSize: "13px", color: cardColor, fontWeight: 700, fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                        {n} of 7 BASIC categories above alert threshold (75%){n === 0 ? " — No alert thresholds exceeded" : ""}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "16px", letterSpacing: "1px" }}>PERCENTILE RANKING (≥75 = ALERT)</p>
 
@@ -1992,13 +2111,19 @@ function TimeBucketSection({
 
                 <ScoreRow label="HAZARDOUS MATERIALS"                        value={sms.hazardous_materials}          alert={sms.hazardous_materials_alert} />
 
+                <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
+                  <p style={{ fontSize: "12px", color: "#1e40af", lineHeight: "1.6", margin: 0 }}>
+                    <strong>What does this mean legally?</strong> High SMS percentile scores indicate the carrier exceeded peer safety benchmarks set by FMCSA. A score at or above the alert threshold (75th percentile) means the carrier was among the most at-risk carriers in that category. Alert threshold (75%) = FMCSA may initiate a compliance review or intervention at this level.
+                  </p>
+                </div>
+
               </>
 
             ) : !sms ? (
 
               <>
 
-                <SubHeader title="Safety Measurement System (SMS) Scores" />
+                <SubHeader title="Safety Measurement System (SMS) Scores" source="Source: FMCSA Safety Measurement System · Updated daily" />
 
                 <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontStyle: "italic" }}>
 
@@ -2044,7 +2169,27 @@ function isLikelyPrivateCarrier(carrier: Carrier): boolean {
 
 }
 
+function authorityTypeLabel(raw?: string | null): string {
+  if (!raw) return "—";
+  const u = raw.toUpperCase().trim();
+  if (u === "COMMON") return "Common Authority";
+  if (u === "CONTRACT") return "Contract Authority";
+  if (u === "BROKER") return "Broker Authority";
+  return raw;
+}
 
+function durationLabel(start?: string | null, end?: string | null): string {
+  const s = dateOnly(start);
+  const e = dateOnly(end) ?? new Date().toISOString().slice(0,10);
+  if (!s) return "";
+  const ms = new Date(e).getTime() - new Date(s).getTime();
+  if (ms <= 0) return "";
+  const totalMonths = Math.floor(ms / (1000 * 60 * 60 * 24 * 30.44));
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  if (years === 0 && months === 0) return "< 1 month";
+  return [years > 0 ? `${years} year${years !== 1 ? "s" : ""}` : "", months > 0 ? `${months} month${months !== 1 ? "s" : ""}` : ""].filter(Boolean).join(", ");
+}
 
 // ─── Derive insurance/authority status with auditable basis ──
 
@@ -3126,6 +3271,78 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
 
 
+  // Validation Warnings — silent checks, amber/red callouts
+  function renderValidationWarnings() {
+    const flags: { level: "amber" | "red"; text: string }[] = [];
+
+    // 1. Authority ACTIVE + insurance INACTIVE/UNKNOWN
+    if (accidentDate && authorityDerived?.status === "active" && (insuranceDerived?.status === "inactive" || insuranceDerived?.status === "unknown")) {
+      flags.push({ level: "amber", text: "Authority active but no confirmed insurance on accident date — verify with FMCSA" });
+    }
+
+    // 2. Fleet 0/0 for active for-hire carrier
+    if (isForHire && isCarrierActive && (carrier.total_drivers ?? 0) === 0 && (carrier.total_trucks ?? 0) === 0) {
+      flags.push({ level: "amber", text: "Fleet size shows 0 drivers and 0 trucks — unverified. Confirm with FMCSA." });
+    }
+
+    // 3. No insurance records AND for-hire carrier
+    if (isForHire && dedupedInsurance.length === 0) {
+      flags.push({ level: "red", text: "⚠ No insurance records found. For-hire carriers must maintain FMCSA insurance filings." });
+    }
+
+    // 4. No authority records AND for-hire carrier
+    if (isForHire && authorityHistory.length === 0 && revocations.length === 0) {
+      flags.push({ level: "amber", text: "⚠ No authority records found in imported data. Check FMCSA SAFER directly." });
+    }
+
+    // 5. Fatal crash within 2 years of today
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setUTCFullYear(twoYearsAgo.getUTCFullYear() - 2);
+    const twoYearsAgoStr = twoYearsAgo.toISOString().slice(0, 10);
+    if (cleanedCrashes.some(c => (c.fatal ?? 0) > 0 && c.crash_date && c.crash_date >= twoYearsAgoStr)) {
+      flags.push({ level: "red", text: "⚠ Fatal crash on record within the last 2 years" });
+    }
+
+    // 6. OOS rate >50% in last 24 months
+    const last24Str = (() => { const d = new Date(); d.setUTCFullYear(d.getUTCFullYear() - 2); return d.toISOString().slice(0,10); })();
+    const recentInspections = inspections.filter(i => i.inspection_date && i.inspection_date >= last24Str && !i.inspection_date.startsWith("1970"));
+    const recentOosCount = recentInspections.filter(i => (i.oos_vehicles ?? 0) > 0 || (i.oos_drivers ?? 0) > 0).length;
+    if (recentInspections.length >= 3 && recentOosCount / recentInspections.length > 0.5) {
+      flags.push({ level: "red", text: `⚠ High out-of-service rate: ${recentOosCount} of ${recentInspections.length} inspections in last 24 months resulted in OOS events (${Math.round(recentOosCount/recentInspections.length*100)}%)` });
+    }
+
+    // 7. Safety rating = UNSATISFACTORY
+    if ((carrier.safety_rating ?? "").toLowerCase() === "unsatisfactory") {
+      flags.push({ level: "red", text: "⚠ UNSATISFACTORY FMCSA safety rating on record" });
+    }
+
+    // 8. 3+ insurance lapses
+    if (insuranceLapses.length >= 3) {
+      flags.push({ level: "amber", text: `Pattern of insurance gaps — ${insuranceLapses.length} coverage interruptions detected in BI&PD insurance history` });
+    }
+
+    if (flags.length === 0) return null;
+
+    return (
+      <div style={{ background: "white", borderRadius: "12px", padding: "16px 24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+        <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Validation Flags</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {flags.map((f, i) => (
+            <div key={i} style={{
+              background: f.level === "red" ? "#fef2f2" : "#fffbeb",
+              border: `1px solid ${f.level === "red" ? "#fecaca" : "#fde68a"}`,
+              borderRadius: "6px", padding: "8px 12px"
+            }}>
+              <p style={{ fontSize: "12px", color: f.level === "red" ? "#991b1b" : "#92400e", margin: 0, lineHeight: "1.5", fontFamily: "'DM Mono', monospace" }}>
+                {f.text}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
 
     <main style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'DM Sans', sans-serif" }}>
@@ -3406,7 +3623,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
         </div>
 
-
+        {renderValidationWarnings()}
 
         {/* Executive Summary */}
 
@@ -4200,9 +4417,52 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
         />
 
-
+        {/* Data Gap Indicators */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "24px" }}>
+          {cleanedCrashes.length === 0 && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ fontSize: "12px", color: "#64748b", fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                No crashes reported to FMCSA for this carrier. Note: Crashes may be filed under a related entity or DOT number.
+              </p>
+            </div>
+          )}
+          {inspections.filter(i => i.inspection_date && !i.inspection_date.startsWith("1970")).length === 0 && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ fontSize: "12px", color: "#64748b", fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                No roadside inspections found in FMCSA records. Common for private carriers or newly registered carriers.
+              </p>
+            </div>
+          )}
+          {violations.length === 0 && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ fontSize: "12px", color: "#64748b", fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                No violations found in FMCSA records.
+              </p>
+            </div>
+          )}
+          {dedupedInsurance.length === 0 && isForHire && (
+            <div style={{ background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                ⚠ No insurance records found for this for-hire carrier. For-hire carriers must maintain FMCSA insurance filings.
+              </p>
+            </div>
+          )}
+          {authorityHistory.length === 0 && isForHire && !insuranceDataGap && (
+            <div style={{ background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace", margin: 0 }}>
+                ⚠ No authority records found in imported data for this for-hire carrier. Verify directly with FMCSA SAFER.
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Required disclaimer */}
+
+        {carrier.updated_at && (
+          <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textAlign: "center", marginTop: "12px" }}>
+            Data as of {fmtDate(carrier.updated_at)} · FMCSA records update daily.
+          </p>
+        )}
 
         <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textAlign: "center", marginTop: "32px", lineHeight: "1.6" }}>
 
