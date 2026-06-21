@@ -217,19 +217,20 @@ LIMIT 10
 - **Badge + SAFER verification** — DONE 2026-06-22 via DB query + Socrata. See findings below.
 - **P5 Chameleon prerequisites**: All met (reimports done, indexes created). Can implement P5 after beta launch.
 
-### Badge Verification Results (2026-06-22, verified against DB + Socrata)
-| DOT | Carrier | Badge | Notes |
-|-----|---------|-------|-------|
-| 2293690 | Nu Breed Transport | REVOKED ✅ | INACTIVE + 1 real revocation |
-| 204814 | BINKS Coca Cola | HIGH RISK ✅ | 5 crashes incl. 1 fatal (Nov 2014, MI) — original expectation of CLEAR was wrong |
-| 2259497 | Buckshot Transport | ELEVATED ✅ | 4 revocations + 3 crashes |
-| 85526 | Exhibitor's Service Co | REVOKED ✅ | INACTIVE + 2 revocations |
-| 100115 | Lamers Bus Lines | HIGH RISK ✅ | 500 crashes, 7 fatal |
-| 914218 | Hale Trucking | ELEVATED ✅ | 5 crashes, active authority+insurance |
-| 228442 | A P Giesbrecht | ELEVATED ✅ | 15 crashes, authority since 1986 |
-| 4573227 | Trucking R Us LLC (active) | DATA GAP ⚠️ | No authority_history or insurance records — carrier is very new; DATA_GAP warning displays correctly |
+### Badge Spec (CURRENT — as of 2026-06-22, commit f1138be)
+Badge reflects **authority/revocation history only**. Not a risk score. No crash/SMS signals.
 
-**For accident-date badge testing:** Use DOT 2528133 (TRUCKING R US LLC, INACTIVE). Authority+insurance both lapsed as of Aug 2016. Set accident date to 2016-09-01 → should trigger HIGH RISK (both auth+insurance inactive on accident date).
+| Badge | Condition | Color |
+|-------|-----------|-------|
+| REVOKED | INACTIVE census + any confirmed INVOLUNTARY_REVOCATION (non-DISCONTINUED) | Red |
+| ACTIVE — PRIOR HISTORY | ACTIVE census + revocation history | Amber |
+| NO DATA — Verify with FMCSA | For-hire carrier (has MC#) + zero authority records in DB | Gray |
+| No Authority Issues Found | ACTIVE + no revocations + authority records present | Neutral gray (detail page only) |
+| *(no badge)* | Same as above, on search results page | — |
+
+**Removed states** (2026-06-22): HIGH RISK, ELEVATED, CLEAR, INACTIVE. Do not re-add without explicit instruction.
+
+**For accident-date badge testing:** DOT 2528133 (TRUCKING R US LLC, INACTIVE). Auth+insurance both lapsed by Aug 2016. Set accident date 2016-09-01.
+
 - Supabase compute downgrade Small → Micro/Nano (already initiated).
 - Stripe integration (deprioritized; pricing: solo ~$199/mo, small firm ~$399/mo, large firm ~$799/mon).
-- `import_boc3_rejected.py` uses DROP TABLE — will wipe on every run. Fix: change to TRUNCATE before next use.
