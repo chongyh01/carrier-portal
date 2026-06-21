@@ -984,6 +984,79 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     today = new Date().toISOString().slice(0, 10);
   }
 
+  // ── Executive Summary (3–4 template lines, no risk judgments) ────────
+  const summaryLines: string[] = [];
+
+  // Line 1 — Authority + insurance status
+  if (accidentDate && authorityDerived && insuranceDerived) {
+    const authStr =
+      authorityDerived.status === "active"         ? "operating authority was ACTIVE"
+      : authorityDerived.status === "not_required" ? "operating authority was NOT REQUIRED"
+      : "operating authority was INACTIVE";
+    const insStr =
+      insuranceDerived.status === "active"         ? "BI&PD insurance was on file"
+      : insuranceDerived.status === "not_required" ? "insurance filing not required"
+      : insuranceDerived.status === "unknown"      ? "insurance status unverified from available records"
+      : "no active BI&PD insurance was on file";
+    summaryLines.push(`As of ${fmtDate(accidentDate)}: ${authStr}; ${insStr}.`);
+  } else {
+    const isPrivate = isLikelyPrivateCarrier(carrier);
+    if (isPrivate) {
+      summaryLines.push("Private property carrier — FMCSA authority and insurance filing requirements may not apply.");
+    } else if (!hasAuthorityData) {
+      summaryLines.push("No FMCSA operating authority records found in imported data. Verify current status directly with FMCSA.");
+    } else {
+      const authStatus = isCarrierActive ? "active" : "inactive";
+      const activeIns = dedupedInsurance.find(i =>
+        (i.policy_type === "91" || i.policy_type === "91X" || i.policy_type === "82") && !i.cancellation_date
+      );
+      const insStr = activeIns
+        ? `BI&PD insurance on file (${activeIns.insurer_name ?? "insurer on record"})`
+        : "no active BI&PD insurance policy found in imported records";
+      summaryLines.push(`${carrier.legal_name} holds ${authStatus} FMCSA operating authority. ${insStr}.`);
+    }
+  }
+
+  // Line 2 — Crash history for the relevant window
+  const totalFatalAll = cleanedCrashes.reduce((s, c) => s + (c.fatal ?? 0), 0);
+  if (accidentDate && cutoff24) {
+    const crashes24 = cleanedCrashes.filter(c => c.crash_date && c.crash_date >= cutoff24 && c.crash_date <= accidentDate);
+    const fatal24   = crashes24.filter(c => (c.fatal ?? 0) > 0).length;
+    if (crashes24.length > 0) {
+      summaryLines.push(`${crashes24.length} crash${crashes24.length !== 1 ? "es" : ""} in the 24 months prior to ${fmtDate(accidentDate)}${fatal24 > 0 ? `, including ${fatal24} fatal` : ""}.`);
+    } else {
+      summaryLines.push(`No crashes recorded in the 24 months prior to ${fmtDate(accidentDate)}.`);
+    }
+  } else {
+    if (cleanedCrashes.length > 0) {
+      summaryLines.push(`${cleanedCrashes.length} crash${cleanedCrashes.length !== 1 ? "es" : ""} in FMCSA records${totalFatalAll > 0 ? `, including ${totalFatalAll} fatal` : ""}.`);
+    } else {
+      summaryLines.push("No crashes recorded in FMCSA history.");
+    }
+  }
+
+  // Line 3 — Revocation history
+  if (hasAnyRealRevocation) {
+    const n = revocations.length || realRevocationsInAuthHist.length;
+    if (isCarrierInactive) {
+      summaryLines.push(`Authority currently revoked. ${n} revocation event${n !== 1 ? "s" : ""} in FMCSA records.`);
+    } else {
+      summaryLines.push(`${n} prior revocation${n !== 1 ? "s" : ""} in FMCSA records; authority subsequently reinstated.`);
+    }
+  } else if (hasAuthorityData) {
+    summaryLines.push("No authority revocations in FMCSA records.");
+  }
+
+  // Line 4 — Pattern (only when notable; omit if nothing stands out)
+  const revTotal = revocations.length || realRevocationsInAuthHist.length;
+  if (isCarrierActive && revTotal >= 3) {
+    summaryLines.push(`${revTotal} authority revocations on record, each followed by reinstatement — verify current compliance directly with FMCSA.`);
+  } else if (totalFatalAll > 1) {
+    summaryLines.push("Multiple fatal crashes in FMCSA history.");
+  } else if (cleanedCrashes.length === 0 && !hasAnyRealRevocation && hasAuthorityData) {
+    summaryLines.push("No crashes or authority issues found in available FMCSA data.");
+  }
+
   const sharedProps = {
     crashes: cleanedCrashes, violations, insurance: dedupedInsurance,
     oosOrders, revocations, authorityHistory, inspections,
@@ -1042,6 +1115,19 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               </p>
             </div>
           )}
+        </div>
+
+        {/* Executive Summary */}
+        <div style={{ background: "white", borderRadius: "12px", padding: "20px 24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+          <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "12px" }}>Executive Summary</p>
+          {summaryLines.map((line, i) => (
+            <p key={i} style={{ fontSize: "13px", color: "#374151", lineHeight: "1.75", marginBottom: i < summaryLines.length - 1 ? "4px" : "0" }}>
+              {line}
+            </p>
+          ))}
+          <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "14px", lineHeight: "1.5" }}>
+            This summary is generated from FMCSA public records and is a triage aid only. It is not a legal opinion or a complete risk assessment. Enter an accident date above for a date-specific analysis.
+          </p>
         </div>
 
         {/* Section 2 — Accident Date Filter */}
