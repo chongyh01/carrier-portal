@@ -1063,6 +1063,11 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
     carrier, sms,
   };
 
+  // Inspections with no date at all — excluded by inRange() so they'd otherwise vanish
+  const undatedInspections = inspections.filter(
+    i => !i.inspection_date || i.inspection_date.startsWith("1970-01-01")
+  ).filter(isNonCompliant);
+
   return (
     <main style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`
@@ -1258,6 +1263,62 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               bucketEnd={today}
               {...sharedProps}
             />
+
+            {/* Undated Inspections — shown once, after all buckets */}
+            {undatedInspections.length > 0 && (
+              <div style={{
+                background: "white", borderRadius: "12px",
+                border: "1px solid #fde68a",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "24px", overflow: "hidden",
+              }}>
+                <div style={{
+                  background: "#fffbeb",
+                  borderBottom: "1px solid #fde68a",
+                  padding: "20px 28px",
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "16px", flexWrap: "wrap" }}>
+                    <h2 style={{ fontSize: "16px", fontWeight: 700, color: "#92400e" }}>
+                      ⚠ Undated Inspections ({undatedInspections.length} record{undatedInspections.length !== 1 ? "s" : ""})
+                    </h2>
+                    <span style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
+                      Date not recorded in FMCSA data
+                    </span>
+                  </div>
+                  <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace", marginTop: "6px" }}>
+                    These inspections cannot be assigned to a time period. They are shown here to ensure no records are silently dropped. Cannot be used for accident-date analysis without a confirmed date.
+                  </p>
+                </div>
+                <div style={{ padding: "4px 28px 28px" }}>
+                  <div style={{ overflowX: "auto", marginTop: "16px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                          {["State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"].map(h => (
+                            <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {undatedInspections.map((insp, i) => {
+                          const hasOos = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
+                          return (
+                            <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
+                              <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(insp.state)}</td>
+                              <td style={{ padding: "8px 12px", color: "#374151", fontSize: "11px" }}>
+                                {insp.level != null ? (INSPECTION_LEVELS[parseInt(insp.level)] ?? `Level ${insp.level}`) : "—"}
+                              </td>
+                              <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
+                              <td style={{ padding: "8px 12px", color: (insp.oos_vehicles ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_vehicles ?? 0) > 0 ? 700 : 400 }}>{insp.oos_vehicles ?? "—"}</td>
+                              <td style={{ padding: "8px 12px", color: (insp.oos_drivers ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_drivers ?? 0) > 0 ? 700 : 400 }}>{insp.oos_drivers ?? "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
