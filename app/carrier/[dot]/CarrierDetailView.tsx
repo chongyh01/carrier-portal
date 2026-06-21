@@ -746,6 +746,41 @@ function TimeBucketSection({
             {bucketOos.length > 0 && (
               <>
                 <SubHeader title="Out-of-Service (OOS) Orders & Reinstatements" />
+                {/* OOS Summary Card */}
+                {(() => {
+                  const n = bucketOos.length;
+                  const noReinstatementCount = bucketOos.filter(o => !o.reinstatement_date).length;
+                  const isPattern = n >= 2;
+                  const hasWarning = noReinstatementCount > 0 || isPattern;
+                  const cardBg = hasWarning ? "#fef2f2" : "#f8fafc";
+                  const cardBorder = hasWarning ? "#fecaca" : "#e2e8f0";
+                  return (
+                    <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: "8px", padding: "12px 16px", marginBottom: "14px" }}>
+                      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                        <li style={{ fontSize: "12px", color: "#374151", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
+                          <span style={{ position: "absolute", left: 0, color: "#64748b" }}>•</span>
+                          {n} out-of-service order{n !== 1 ? "s" : ""} in this period
+                        </li>
+                        {noReinstatementCount > 0 && (
+                          <li style={{ fontSize: "12px", color: "#991b1b", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
+                            <span style={{ position: "absolute", left: 0, color: "#991b1b" }}>•</span>
+                            ⚠ {noReinstatementCount} order{noReinstatementCount !== 1 ? "s" : ""} with no reinstatement date on record
+                          </li>
+                        )}
+                        {isPattern && (
+                          <li style={{ fontSize: "12px", color: "#92400e", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
+                            <span style={{ position: "absolute", left: 0, color: "#92400e" }}>•</span>
+                            Pattern: {n} OOS events — repeated out-of-service history
+                          </li>
+                        )}
+                        <li style={{ fontSize: "12px", color: "#64748b", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative", marginTop: "4px" }}>
+                          <span style={{ position: "absolute", left: 0, color: "#94a3b8" }}>ℹ</span>
+                          An out-of-service order means FMCSA prohibited this carrier from operating until safety violations were corrected.
+                        </li>
+                      </ul>
+                    </div>
+                  );
+                })()}
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                     <thead><TH cols={["Order Date", "Reason", "Status", "Reinstated"]} /></thead>
@@ -876,11 +911,45 @@ function TimeBucketSection({
                 )}
                 <InfoRow label="Review Type" value={carrier.review_type} />
                 <InfoRow label="Review Date" value={carrier.review_date ? fmtDate(carrier.review_date) : undefined} />
+                {/* Rating-specific callouts */}
+                {carrier.safety_rating && (() => {
+                  const rating = carrier.safety_rating.toLowerCase();
+                  if (rating === "unsatisfactory") {
+                    return (
+                      <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
+                        <p style={{ fontSize: "12px", color: "#991b1b", fontFamily: "'DM Mono', monospace", fontWeight: 700 }}>
+                          UNSATISFACTORY rating — carrier failed FMCSA safety review
+                        </p>
+                      </div>
+                    );
+                  }
+                  if (rating === "conditional") {
+                    return (
+                      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
+                        <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace", fontWeight: 700 }}>
+                          CONDITIONAL rating — carrier had deficiencies at time of review
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                {/* Age warning for ratings > 10 years old */}
                 {(() => {
                   const rd = carrier.safety_rating_date || carrier.review_date;
                   if (!rd) return null;
                   const yearsOld = new Date().getUTCFullYear() - parseInt(rd.slice(0, 4));
                   if (yearsOld <= 10) return null;
+                  const rating = (carrier.safety_rating ?? "").toLowerCase();
+                  if (rating === "satisfactory") {
+                    return (
+                      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
+                        <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
+                          ⚠ Rating is {yearsOld} years old. No more recent FMCSA safety review found in records. This rating may not reflect current safety status.
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
                     <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
                       <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
