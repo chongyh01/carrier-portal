@@ -28,10 +28,8 @@
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
 | Missing inspection dates | Inspection table | Inspections with null inspection_date excluded from all time-bucket views (inRange returns false for null); data issue not yet diagnosed |
-| rejected_insurance.class_code field mapping | Loader used mod_col_3 for class_code but actual column is ins_class_code | Minor — rej_reasons (the litigation-critical field) is correctly mapped. Fix: update load_rejected_insurance in fmcsa_import.py: class_code ← ins_class_code (not mod_col_3) |
 | `carrier-portal/AGENTS.md` flagged as potential prompt injection | Repo root | Needs manual review before deletion — do not delete blindly |
 | `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | Not yet diagnosed; violations show without inspection link |
-| CFR code key format mismatch in some codes | cfr_descriptions.json has duplicate keys ('398.8D1-MW' vs '398.8D1-mw') — JS keeps last value, minor | Deduplication needed in cfr_descriptions.json |
 
 ### Fixed
 | Issue | Root Cause | Fix | Date |
@@ -69,6 +67,10 @@
 | Chameleon connection_type always "Same address" | `page.tsx` | Split into two separate queries (address + phone); BOC3 cross-reference added as 3rd query | 2026-06-20 |
 | `first_authority_date` missing on suspect successors | `page.tsx` | fetchSuspectSuccessors now populates first_authority_date from authority_history | 2026-06-20 |
 | DATA_GAP warning missing for for-hire carriers with 0 records | `CarrierDetailView.tsx` | Added amber warning when MC number exists but 0 authority or insurance records found | 2026-06-20 |
+| Status badge ignored revocation/crash/SMS — 3-iteration overhaul | `CarrierDetailView.tsx` + `app/page.tsx` | Badge now: REVOKED (INACTIVE+revocations) / HIGH RISK (fatal crash or 3+ SMS or both lapsed) / ELEVATED (any crash or SMS or one lapsed) / ACTIVE-PRIOR HISTORY / CLEAR / INACTIVE. Accident-date lapse check on detail page only | 2026-06-21 |
+| `import_boc3_rejected.py` DROP TABLE wiped data on every re-run | `import_boc3_rejected.py` | Changed to CREATE IF NOT EXISTS + TRUNCATE RESTART IDENTITY — preserves structure and indexes | 2026-06-22 |
+| `rejected_insurance.class_code` used wrong column `mod_col_3` | `fmcsa_import.py` + `import_boc3_rejected.py` | Both scripts already use `ins_class_code or mod_col_3` fallback — already fixed in code; data reimport not required | 2026-06-22 |
+| CFR code key format mismatch (398.8D1-MW vs 398.8D1-mw) | `cfr_descriptions.json` + `CarrierDetailView.tsx` | Removed lowercase duplicate from both JSON files; added `.toUpperCase()` fallback in `cfrDescription()` | 2026-06-22 |
 
 ---
 

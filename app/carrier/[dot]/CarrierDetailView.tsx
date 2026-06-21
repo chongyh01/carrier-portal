@@ -153,17 +153,20 @@ const CFR_FULL = cfrJson as Record<string, string>;
 
 function cfrDescription(raw?: string | null): string | null {
   if (!raw || raw === "999") return null;
-  // 1. Exact match against full FMCSA dataset (2,365 codes)
-  const exact = CFR_FULL[raw.trim()];
-  if (exact) return exact;
+  const t = raw.trim();
+  // 1. Exact match
+  if (CFR_FULL[t]) return CFR_FULL[t];
+  // 1b. Uppercase suffix fallback (handles lowercase codes from DB e.g. "398.8D1-mw" → "398.8D1-MW")
+  const upper = t.toUpperCase();
+  if (CFR_FULL[upper]) return CFR_FULL[upper];
   // 2. Prefix match (e.g. "393.48-BRAKES" → try "393.48")
-  const m = raw.match(/^(\d+\.\d+[A-Za-z0-9]*)/);
+  const m = t.match(/^(\d+\.\d+[A-Za-z0-9]*)/);
   if (m) {
-    const prefix = CFR_FULL[m[1]];
+    const prefix = CFR_FULL[m[1]] ?? CFR_FULL[m[1].toUpperCase()];
     if (prefix) return prefix;
   }
   // 3. Numeric-only prefix fallback (hardcoded common codes)
-  const numM = raw.match(/^(\d+\.\d+)/);
+  const numM = t.match(/^(\d+\.\d+)/);
   return numM ? (CFR_DESCRIPTIONS[numM[1]] ?? null) : null;
 }
 
