@@ -1261,6 +1261,50 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           </>
         )}
 
+        {/* Section — Undated Inspections (date unavailable — excluded from time buckets above) */}
+        {(() => {
+          const undated = inspections.filter(i => {
+            const d = i.inspection_date;
+            return (!d || d.startsWith("1970-01-01")) && isNonCompliant(i);
+          });
+          if (undated.length === 0) return null;
+          return (
+            <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
+              <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "4px" }}>Inspections — Date Unavailable</h2>
+              <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
+                {undated.length} inspection{undated.length !== 1 ? "s" : ""} with violations or out-of-service events could not be assigned to a time period because the inspection date was not recorded in the imported data. These records are shown here so they are not silently omitted.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                      {["State", "Level", "Violations", "Out of Service Vehicles", "Out of Service Drivers"].map(h => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {undated.map((insp, i) => {
+                      const hasOos = (insp.oos_vehicles ?? 0) > 0 || (insp.oos_drivers ?? 0) > 0;
+                      return (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: hasOos ? "#fff7ed" : "transparent" }}>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{stateName(insp.state)}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151", fontSize: "11px" }}>
+                            {insp.level != null ? (INSPECTION_LEVELS[parseInt(insp.level)] ?? `Level ${insp.level}`) : "—"}
+                          </td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>{insp.total_violations ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", color: (insp.oos_vehicles ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_vehicles ?? 0) > 0 ? 700 : 400 }}>{insp.oos_vehicles ?? "—"}</td>
+                          <td style={{ padding: "8px 12px", color: (insp.oos_drivers ?? 0) > 0 ? "#f97316" : "#374151", fontWeight: (insp.oos_drivers ?? 0) > 0 ? 700 : 400 }}>{insp.oos_drivers ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Section — Chameleon Carrier Detection */}
         {suspectSuccessors.length > 0 && (
           <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "2px solid #fca5a5", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
