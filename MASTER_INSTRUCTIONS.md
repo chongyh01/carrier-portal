@@ -27,7 +27,7 @@
 ### Open
 | Issue | Where | Root Cause (if known) |
 |---|---|---|
-| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | `backfill_inspection_id-V1.py` written; estimated 83.5% fill rate via dot_number join. Awaiting violations dedup completion before run. |
+| `inspection_id` NULL on violations | FK never populated — violations not linked to parent inspections | `backfill_inspection_id-V1.py` written; estimated 83.5% fill rate via dot_number join. Run after violations dedup completes. |
 
 ### Fixed
 | Issue | Root Cause | Fix | Date |
