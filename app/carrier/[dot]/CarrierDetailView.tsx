@@ -434,6 +434,127 @@ function TimeBucketSection({
             {bucketViolations.length > 0 && (
               <>
                 <SubHeader title="Violations" />
+                {(() => {
+                  // Compute violation pattern analysis
+                  const totalViolations = bucketViolations.length;
+                  const oosCount = bucketViolations.filter(v => v.oos_indicator === "Y").length;
+
+                  // Count violations by category code
+                  const catCounts: Record<number, number> = {};
+                  for (const v of bucketViolations) {
+                    const code = v.violation_code ? parseInt(v.violation_code) : null;
+                    if (code !== null && !isNaN(code)) {
+                      catCounts[code] = (catCounts[code] ?? 0) + 1;
+                    }
+                  }
+
+                  // Top category by count
+                  let topCatCode: number | null = null;
+                  let topCatCount = 0;
+                  for (const [codeStr, cnt] of Object.entries(catCounts)) {
+                    if (cnt > topCatCount) {
+                      topCatCount = cnt;
+                      topCatCode = parseInt(codeStr);
+                    }
+                  }
+                  const topCatName = topCatCode !== null ? (VIOLATION_CATEGORY[topCatCode] ?? `Code ${topCatCode}`) : null;
+
+                  // Brake violations: category 15 (Out of Adjustment) + 16 (All Other)
+                  const brakeCount = (catCounts[15] ?? 0) + (catCounts[16] ?? 0);
+
+                  // Hours of Service violations: categories 3,4,5,6,7 (all HOS types) + 49 (State/Local HOS)
+                  const hosCount = (catCounts[3] ?? 0) + (catCounts[4] ?? 0) + (catCounts[5] ?? 0) +
+                                   (catCounts[6] ?? 0) + (catCounts[7] ?? 0) + (catCounts[49] ?? 0);
+
+                  // Find any single category appearing 5+ times (systemic issue check)
+                  const systemicEntry = Object.entries(catCounts).find(([, cnt]) => cnt >= 5);
+                  const systemicCode = systemicEntry ? parseInt(systemicEntry[0]) : null;
+                  const systemicCount = systemicEntry ? systemicEntry[1] : 0;
+                  const systemicName = systemicCode !== null ? (VIOLATION_CATEGORY[systemicCode] ?? `Code ${systemicCode}`) : null;
+
+                  // Unique inspection dates to count inspections represented
+                  const inspDates = new Set(
+                    bucketViolations
+                      .map(v => (v as Violation & { inspection_date?: string }).inspection_date)
+                      .filter((d): d is string => !!d && !d.startsWith("1970-01-01"))
+                  );
+                  const inspectionCount = inspDates.size;
+
+                  const bullets: string[] = [];
+
+                  // Bullet 1 — totals
+                  if (inspectionCount > 0) {
+                    bullets.push(`${totalViolations} total violation${totalViolations !== 1 ? "s" : ""} across ${inspectionCount} inspection${inspectionCount !== 1 ? "s" : ""}`);
+                  } else {
+                    bullets.push(`${totalViolations} total violation${totalViolations !== 1 ? "s" : ""}`);
+                  }
+
+                  // Bullet 2 — most frequent category
+                  if (topCatName) {
+                    bullets.push(`Most frequent: ${topCatName} (${topCatCount} time${topCatCount !== 1 ? "s" : ""})`);
+                  }
+
+                  // Bullet 3 — OOS violations
+                  if (oosCount > 0) {
+                    bullets.push(`Out-of-service violations: ${oosCount}`);
+                  }
+
+                  // Bullet 4 — brake pattern
+                  if (brakeCount >= 3) {
+                    bullets.push(`Repeated brake violations — pattern of brake maintenance failures (${brakeCount} brake-related violations)`);
+                  }
+
+                  // Bullet 5 — HOS pattern
+                  if (hosCount >= 3) {
+                    bullets.push(`Repeated Hours of Service violations (${hosCount} HOS-related violations)`);
+                  }
+
+                  // Bullet 6 — systemic single-category pattern (only if not already covered by brake/HOS bullets)
+                  const systemicIsNotBrake = systemicCode !== null && systemicCode !== 15 && systemicCode !== 16;
+                  const systemicIsNotHos   = systemicCode !== null && ![3,4,5,6,7,49].includes(systemicCode);
+                  if (systemicName && systemicIsNotBrake && systemicIsNotHos) {
+                    bullets.push(`${systemicName} violations appear ${systemicCount} times — possible systemic issue`);
+                  }
+
+                  // Cap at 5 bullets per spec
+                  const displayBullets = bullets.slice(0, 5);
+
+                  return (
+                    <div style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "12px 16px",
+                      marginBottom: "14px",
+                    }}>
+                      <p style={{
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        fontFamily: "'DM Mono', monospace",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        marginBottom: "8px",
+                      }}>
+                        Pattern Analysis
+                      </p>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                        {displayBullets.map((b, i) => (
+                          <li key={i} style={{
+                            fontSize: "12px",
+                            color: "#374151",
+                            lineHeight: "1.6",
+                            paddingLeft: "14px",
+                            position: "relative",
+                          }}>
+                            <span style={{ position: "absolute", left: 0, color: "#64748b" }}>•</span>
+                            {b}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                     <thead><TH cols={["Date", "Category", "Violation Description / CFR Code", "Unit", "Out of Service (OOS)"]} /></thead>
