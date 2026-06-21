@@ -436,7 +436,7 @@ function TimeBucketSection({
                 <SubHeader title="Violations" />
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                    <thead><TH cols={["Date", "Category", "CFR Section", "Unit", "OOS"]} /></thead>
+                    <thead><TH cols={["Date", "Category", "Violation Description / CFR Code", "Unit", "OOS"]} /></thead>
                     <tbody>
                       {bucketViolations.map((v, i) => {
                         const vx = v as Violation & { inspection_date?: string };
@@ -1233,23 +1233,26 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           </div>
         ) : (
           <>
+            {/* Bucket 1 — oldest: more than 24 months before accident (chronological order) */}
             <TimeBucketSection
-              label="Within 24 Months Prior to Accident"
+              label={`More Than 24 Months Before ${fmtDate(accidentDate)}`}
+              sub={`Before ${fmtDate(cutoff24)}`}
+              bucketStart={null}
+              bucketEnd={cutoff24Minus1}
+              {...sharedProps}
+            />
+            {/* Bucket 2 — within 24 months before accident (most critical for litigation) */}
+            <TimeBucketSection
+              label={`Within 24 Months Before ${fmtDate(accidentDate)}`}
               sub={`${fmtDate(cutoff24)} – ${fmtDate(accidentDate)}`}
               highlight
               bucketStart={cutoff24}
               bucketEnd={accidentDate}
               {...sharedProps}
             />
+            {/* Bucket 3 — from accident date to today */}
             <TimeBucketSection
-              label="More Than 24 Months Prior to Accident"
-              sub={`Before ${fmtDate(cutoff24)}`}
-              bucketStart={null}
-              bucketEnd={cutoff24Minus1}
-              {...sharedProps}
-            />
-            <TimeBucketSection
-              label="From Accident Date to Today"
+              label={`From ${fmtDate(accidentDate)} to Today`}
               sub={`${fmtDate(accidentDate)} – Today`}
               bucketStart={accidentDate}
               bucketEnd={today}
