@@ -675,7 +675,7 @@ type TimeBucketProps = {
 
   accidentInsuranceStatus?: "active" | "inactive" | "not_required" | "unknown" | null;
 
-  accidentAuthorityStatus?: "active" | "inactive" | "not_required" | null;
+  accidentAuthorityStatus?: "active" | "inactive" | "not_required" | "unknown" | null;
 
 };
 
@@ -744,7 +744,8 @@ function TimeBucketSection({
 
   });
 
-  const bucketInspections  = inspections.filter(i  => inRange(i.inspection_date, s, e)).filter(isNonCompliant);
+  const allBucketInspections = inspections.filter(i => inRange(i.inspection_date, s, e));
+  const bucketInspections  = allBucketInspections.filter(isNonCompliant);
 
 
 
@@ -764,7 +765,7 @@ function TimeBucketSection({
 
     bucketRevocations.length === 0 && bucketAuthority.length === 0 &&
 
-    bucketInspections.length === 0 && !ratingInBucket && !smsInBucket;
+    allBucketInspections.length === 0 && !ratingInBucket && !smsInBucket;
 
 
 
@@ -823,6 +824,7 @@ function TimeBucketSection({
           const authLabel =
             accidentAuthorityStatus === "active"       ? "Authority ACTIVE"
             : accidentAuthorityStatus === "not_required" ? "Authority NOT REQUIRED"
+            : accidentAuthorityStatus === "unknown"    ? "Authority UNVERIFIED"
             : "Authority REVOKED";
           const insColor =
             accidentInsuranceStatus === "active"       ? "#16a34a"
@@ -832,6 +834,7 @@ function TimeBucketSection({
           const authColor =
             accidentAuthorityStatus === "active"       ? "#16a34a"
             : accidentAuthorityStatus === "not_required" ? "#64748b"
+            : accidentAuthorityStatus === "unknown"    ? "#d97706"
             : "#dc2626";
           return (
             <p style={{ fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace", marginTop: "6px" }}>
@@ -1158,10 +1161,10 @@ function TimeBucketSection({
                         )}
                       </div>
 
-                      {/* 3-column violations table */}
+                      {/* 5-column violations table */}
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                          <thead><TH cols={["Date", "Violation Description / CFR Code", "Unit"]} /></thead>
+                          <thead><TH cols={["Date", "Category", "Violation / CFR Code", "Unit", "OOS"]} /></thead>
                           <tbody>
                             {bucketViolations.map((v, i) => {
                               const vx = v as Violation & { inspection_date?: string };
@@ -1175,31 +1178,27 @@ function TimeBucketSection({
                                   <td style={{ padding: "8px 12px", whiteSpace: "nowrap", color: hasDate ? "#374151" : "#94a3b8", fontStyle: hasDate ? "normal" : "italic" }}>
                                     {hasDate ? fmtDate(vx.inspection_date) : "—"}
                                   </td>
+                                  <td style={{ padding: "8px 12px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>
+                                    {catName ?? v.basic_category ?? "—"}
+                                  </td>
                                   <td style={{ padding: "8px 12px" }}>
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-                                      <div style={{ flex: 1 }}>
-                                        {cfrPlain ? (
-                                          <>
-                                            <span style={{ color: "#374151", display: "block", fontWeight: 600 }}>{cfrPlain}</span>
-                                            <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{v.description}</span>
-                                          </>
-                                        ) : v.description ? (
-                                          <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px", display: "block" }}>{v.description}</span>
-                                        ) : (
-                                          <span style={{ color: "#94a3b8" }}>—</span>
-                                        )}
-                                        {(catName || v.basic_category) && (
-                                          <span style={{ color: "#94a3b8", fontSize: "11px", display: "block", marginTop: "2px" }}>
-                                            {[catName, v.basic_category].filter(Boolean).join(" — ")}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {isOos && (
-                                        <span style={{ display: "inline-block", background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: "4px", padding: "1px 6px", fontSize: "10px", fontWeight: 700, fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap", flexShrink: 0 }}>OOS</span>
-                                      )}
-                                    </div>
+                                    {cfrPlain ? (
+                                      <>
+                                        <span style={{ color: "#374151", display: "block", fontWeight: 600 }}>{cfrPlain}</span>
+                                        <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "10px" }}>{v.description}</span>
+                                      </>
+                                    ) : v.description ? (
+                                      <span style={{ color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px", display: "block" }}>{v.description}</span>
+                                    ) : (
+                                      <span style={{ color: "#94a3b8" }}>—</span>
+                                    )}
                                   </td>
                                   <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{v.unit_type ?? "—"}</td>
+                                  <td style={{ padding: "8px 12px" }}>
+                                    {isOos && (
+                                      <span style={{ display: "inline-block", background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: "4px", padding: "1px 6px", fontSize: "10px", fontWeight: 700, fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap" }}>OOS</span>
+                                    )}
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -1379,11 +1378,34 @@ function TimeBucketSection({
 
                           <td style={{ padding: "8px 12px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.policy_number ?? "—"}</td>
 
-                          <td style={{ padding: "8px 12px", color: "#374151" }}>{fmtDate(ins.effective_date)}</td>
+                          <td style={{ padding: "8px 12px", color: "#374151" }}>
+                            {fmtDate(ins.effective_date)}
+                            {hasInsDateConflict && (() => {
+                              const eff = dateOnly(ins.effective_date);
+                              const cancel = dateOnly(ins.cancellation_date);
+                              return (eff && cancel && cancel < eff)
+                                ? <ConflictFlag label="cancellation precedes effective date" />
+                                : null;
+                            })()}
+                          </td>
 
                           <td style={{ padding: "8px 12px", color: ins.cancellation_date ? "#ef4444" : "#94a3b8" }}>{fmtDate(ins.cancellation_date)}</td>
 
-                          <td style={{ padding: "8px 12px", color: "#374151", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{ins.status ?? "—"}</td>
+                          <td style={{ padding: "8px 12px" }}>
+                            {ins.status ? (() => {
+                              const st = ins.status.toLowerCase();
+                              const isActive   = st === "active";
+                              const isCancelled = st.includes("cancel") || st.includes("term");
+                              const isReplaced  = st === "replaced";
+                              const bg = isActive ? "#f0fdf4" : isCancelled ? "#fef2f2" : isReplaced ? "#fffbeb" : "#f8fafc";
+                              const col = isActive ? "#15803d" : isCancelled ? "#dc2626" : isReplaced ? "#92400e" : "#64748b";
+                              return (
+                                <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: bg, color: col }}>
+                                  {ins.status}
+                                </span>
+                              );
+                            })() : <span style={{ color: "#94a3b8" }}>—</span>}
+                          </td>
 
                         </tr>
 
@@ -1574,21 +1596,28 @@ function TimeBucketSection({
 
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
 
-                    <thead><TH cols={["Date", "Description"]} /></thead>
+                    <thead><TH cols={["Date", "Type", "Detail"]} /></thead>
 
                     <tbody>
 
-                      {bucketRevocations.map((a, i) => (
-
-                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: "#fef2f2" }}>
+                      {bucketRevocations.map((a, i) => {
+                        const isDiscontinued = (a.description ?? "").toLowerCase().includes("discontinued");
+                        return (
+                        <tr key={i} style={{ borderBottom: "1px solid #f8fafc", background: isDiscontinued ? "#f0fdf4" : "#fef2f2" }}>
 
                           <td style={{ padding: "8px 12px", color: "#374151", whiteSpace: "nowrap" }}>{fmtDate(a.event_date)}</td>
 
-                          <td style={{ padding: "8px 12px", color: "#374151" }}>Involuntary Revocation</td>
+                          <td style={{ padding: "8px 12px" }}>
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, fontFamily: "'DM Mono', monospace", background: isDiscontinued ? "#f0fdf4" : "#fef2f2", color: isDiscontinued ? "#15803d" : "#dc2626" }}>
+                              {isDiscontinued ? "DISCONTINUED" : "INVOLUNTARY"}
+                            </span>
+                          </td>
+
+                          <td style={{ padding: "8px 12px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{a.description ?? "Involuntary Revocation"}</td>
 
                         </tr>
-
-                      ))}
+                        );
+                      })}
 
                     </tbody>
 
@@ -1673,11 +1702,16 @@ function TimeBucketSection({
 
                             {a.status ? (
 
-                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: a.status.toLowerCase().includes("active") ? "#f0fdf4" : "#f8fafc", color: a.status.toLowerCase().includes("active") ? "#22c55e" : "#64748b" }}>
-
-                                {a.status}
-
-                              </span>
+                              (() => {
+                                const st = a.status.toUpperCase();
+                                const isGood = st.includes("ACTIVE") || st.includes("GRANTED") || st.includes("REINSTATED");
+                                const isBad  = st.includes("REVOC") || st.includes("INVOLUNTARY") || st.includes("CANCEL");
+                                return (
+                                  <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, fontFamily: "'DM Mono', monospace", background: isGood ? "#f0fdf4" : isBad ? "#fef2f2" : "#f8fafc", color: isGood ? "#22c55e" : isBad ? "#dc2626" : "#64748b" }}>
+                                    {a.status}
+                                  </span>
+                                );
+                              })()
 
                             ) : "—"}
 
@@ -1767,8 +1801,8 @@ function TimeBucketSection({
 
                         <p style={{ fontSize: "12px", color: "#374151", fontFamily: "'DM Mono', monospace", marginBottom: topLevelName ? "4px" : "0" }}>
 
-                          {total} inspection{total !== 1 ? "s" : ""}
-
+                          {allBucketInspections.length} total inspection{allBucketInspections.length !== 1 ? "s" : ""} in period
+                          {total < allBucketInspections.length && <span style={{ color: "#94a3b8" }}>{" "}· {total} with violations or OOS (shown below)</span>}
                           {oosCount > 0 && <span style={{ color: "#f97316", fontWeight: 700 }}>{" "}· {oosCount} OOS event{oosCount !== 1 ? "s" : ""} ({oosRate}%{oosRate > 20 ? " — above threshold" : ""})</span>}
 
                         </p>
@@ -1813,9 +1847,9 @@ function TimeBucketSection({
 
                           {withViolations.length > 0
 
-                            ? `Yes — ${withViolations.length}/${total} inspections (${Math.round(withViolations.length / total * 100)}%) had violations.${oosCount > 0 ? ` ${oosCount} OOS event${oosCount !== 1 ? "s" : ""}.` : ""}`
+                            ? `Yes — ${withViolations.length} of ${allBucketInspections.length} inspection${allBucketInspections.length !== 1 ? "s" : ""} (${Math.round(withViolations.length / allBucketInspections.length * 100)}%) had violations.${oosCount > 0 ? ` ${oosCount} OOS event${oosCount !== 1 ? "s" : ""}.` : ""}`
 
-                            : total > 0 ? "No violations found at inspections in this period." : "No dated inspections in this period."}
+                            : allBucketInspections.length > 0 ? `No violations or OOS events found at ${allBucketInspections.length} inspection${allBucketInspections.length !== 1 ? "s" : ""} in this period.` : "No dated inspections in this period."}
 
                         </p>
 
@@ -1831,23 +1865,21 @@ function TimeBucketSection({
 
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
 
-                    <thead><TH cols={["Date", "State", "Level", "Violations", "OOS"]} /></thead>
+                    <thead><TH cols={["Date", "State", "Level", "Violations", "OOS Vehicles", "OOS Drivers"]} /></thead>
 
                     <tbody>
 
                       {bucketInspections.map((insp, i) => {
 
-                        const hasOosV = (insp.oos_vehicles ?? 0) > 0;
+                        const oosV    = insp.oos_vehicles ?? 0;
 
-                        const hasOosD = (insp.oos_drivers ?? 0) > 0;
+                        const oosD    = insp.oos_drivers ?? 0;
 
-                        const hasOos  = hasOosV || hasOosD;
+                        const hasOos  = oosV > 0 || oosD > 0;
 
                         const hasDate = insp.inspection_date && !insp.inspection_date.startsWith("1970-01-01");
 
                         const viol    = insp.total_violations ?? 0;
-
-                        const oosLabel = hasOosV && hasOosD ? "Vehicle + Driver OOS" : hasOosV ? "Vehicle OOS" : hasOosD ? "Driver OOS" : null;
 
                         return (
 
@@ -1869,13 +1901,19 @@ function TimeBucketSection({
 
                             <td style={{ padding: "8px 12px", color: viol > 0 ? "#374151" : "#94a3b8" }}>
 
-                              {viol > 0 ? `${viol} violation${viol !== 1 ? "s" : ""}` : "No violations"}
+                              {viol > 0 ? viol : "—"}
 
                             </td>
 
-                            <td style={{ padding: "8px 12px", color: oosLabel ? "#f97316" : "#94a3b8", fontWeight: oosLabel ? 700 : 400 }}>
+                            <td style={{ padding: "8px 12px", color: oosV > 0 ? "#f97316" : "#94a3b8", fontWeight: oosV > 0 ? 700 : 400 }}>
 
-                              {oosLabel ?? "—"}
+                              {oosV > 0 ? oosV : "—"}
+
+                            </td>
+
+                            <td style={{ padding: "8px 12px", color: oosD > 0 ? "#f97316" : "#94a3b8", fontWeight: oosD > 0 ? 700 : 400 }}>
+
+                              {oosD > 0 ? oosD : "—"}
 
                             </td>
 
@@ -1895,7 +1933,17 @@ function TimeBucketSection({
 
             )}
 
-
+            {/* Clean inspections — bucket has inspections but none with violations/OOS */}
+            {bucketInspections.length === 0 && allBucketInspections.length > 0 && (
+              <>
+                <SubHeader title="Inspection History" />
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px" }}>
+                  <p style={{ fontSize: "12px", color: "#15803d", fontFamily: "'DM Mono', monospace" }}>
+                    {allBucketInspections.length} inspection{allBucketInspections.length !== 1 ? "s" : ""} in this period — no violations or out-of-service events recorded.
+                  </p>
+                </div>
+              </>
+            )}
 
             {/* Safety Rating */}
 
@@ -2011,7 +2059,7 @@ function TimeBucketSection({
 
                         <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
 
-                          ⚠ Rating is {yearsOld} years old. No more recent FMCSA safety review found in records. This rating may not reflect current safety status.
+                          ⚠ No more recent safety review located. This rating is {yearsOld}+ years old and may not reflect current safety status.
 
                         </p>
 
@@ -2217,7 +2265,7 @@ function deriveInsuranceBasis(
 
       };
 
-    return { status: "inactive", basis: "No FMCSA insurance filings found for this carrier." };
+    return { status: "unknown", basis: "No FMCSA insurance filings located in available records. Cannot confirm whether insurance was active or absent on this date — verify directly with FMCSA." };
 
   }
 
@@ -2359,7 +2407,7 @@ function deriveAuthorityBasis(
 
   carrier: Carrier,
 
-): { status: "active" | "inactive" | "not_required"; basis: string } {
+): { status: "active" | "inactive" | "not_required" | "unknown"; basis: string } {
 
   if (authorityHistory.length === 0) {
 
@@ -2373,7 +2421,7 @@ function deriveAuthorityBasis(
 
       };
 
-    return { status: "inactive", basis: "No operating authority records found for this carrier." };
+    return { status: "unknown", basis: "No operating authority records located in available records. Cannot confirm whether authority was active or absent on this date — verify directly with FMCSA." };
 
   }
 
@@ -2883,6 +2931,143 @@ function downloadCSV(content: string, filename: string): void {
 
 }
 
+// ─── Data conflict types and detection ───────────────────────
+
+type DataConflict = {
+  rule: string;
+  fields: string[];
+  detail: string;
+};
+
+// TECH DEBT: This function is an independent TypeScript reimplementation of a
+// subset of the Python validation rules in validation_rules.py. The frontend
+// receives raw Supabase rows directly (via page.tsx) and never sees the Python
+// layer's `facts.validation_conflicts` output. As a result:
+//   - Only 3 of 20 Python rules are replicated here (fleet, insurance dates, SMS).
+//   - Rule 01 (authority_not_both_active_and_revoked) cannot be safely detected
+//     here without replicating _infer_authority_status() — the effectiveRisk
+//     authority-override hook is wired but currently dead code.
+//   - If Python rules change, this function must be updated manually — there is
+//     no enforcement mechanism.
+// Long-term fix: expose validation_conflicts via an API endpoint or store it in
+// Supabase at import time, then consume it here instead of re-deriving it.
+function detectDataConflicts(
+  carrier: Carrier,
+  insurance: Insurance[],
+  inspections: Inspection[],
+  sms: SmsScores | null,
+): DataConflict[] {
+  const conflicts: DataConflict[] = [];
+
+  // Rule 16: fleet asymmetry — one of power_units/drivers is 0 while the other is not
+  const pu = carrier.total_trucks ?? 0;
+  const dr = carrier.total_drivers ?? 0;
+  if ((pu > 0 && dr === 0) || (dr > 0 && pu === 0)) {
+    conflicts.push({
+      rule:   "fleet_data_not_asymmetric",
+      fields: ["fleet_power_units", "fleet_drivers"],
+      detail: `Fleet data conflict: ${pu} power unit${pu !== 1 ? "s" : ""} but ${dr} driver${dr !== 1 ? "s" : ""}. One value is zero while the other is not — verify fleet size with FMCSA.`,
+    });
+  }
+
+  // Rule 11: insurance dates — cancellation before effective date is impossible
+  for (const ins of insurance) {
+    const eff    = dateOnly(ins.effective_date);
+    const cancel = dateOnly(ins.cancellation_date);
+    if (eff && cancel && cancel < eff) {
+      conflicts.push({
+        rule:   "insurance_dates_internally_consistent",
+        fields: ["insurance_records"],
+        detail: `Insurance date conflict: a policy from ${ins.insurer_name ?? "unknown insurer"} shows cancellation (${cancel}) before effective date (${eff}). This ordering is impossible — verify this policy directly with FMCSA.`,
+      });
+      break; // surface one example only
+    }
+  }
+
+  // Rule 5: SMS scores present but no inspections — data may be stale or mislinked
+  const hasAnySmsScore = sms !== null && sms !== undefined && (
+    sms.unsafe_driving != null ||
+    sms.crash_indicator != null ||
+    sms.driver_fitness != null ||
+    sms.vehicle_maintenance != null ||
+    sms.hours_of_service_compliance != null
+  );
+  if (hasAnySmsScore && inspections.length === 0) {
+    conflicts.push({
+      rule:   "no_sms_without_inspections",
+      fields: ["sms_scores", "inspection_count"],
+      detail: "SMS percentile scores are on file but no inspection records were found. SMS data may be stale or linked to a different DOT — verify inspection history directly with FMCSA.",
+    });
+  }
+
+  return conflicts;
+}
+
+// Visible conflict notice at the top of the report when data conflicts are detected.
+// Never blocks or replaces the report — only adds information.
+function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (conflicts.length === 0) return null;
+  const plural = conflicts.length !== 1;
+  return (
+    <div className="no-print" style={{ background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: "10px", padding: "16px 20px", marginBottom: "20px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        <span style={{ fontSize: "16px", lineHeight: "1.4", flexShrink: 0, color: "#92400e" }}>⚠</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#92400e", marginBottom: "4px" }}>Data Conflict Notice</p>
+          <p style={{ fontSize: "13px", color: "#78350f", lineHeight: "1.6", marginBottom: "8px" }}>
+            This carrier&apos;s FMCSA data contains {plural ? `${conflicts.length} conflicts` : "a conflict"} that could not be automatically resolved.
+            {" "}Manual verification via{" "}
+            <a href="https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT"
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: "#92400e", fontWeight: 700 }}>SAFER</a>{" "}
+            is recommended before relying on this report.
+          </p>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+          >
+            {expanded ? "Hide details ▲" : `Show details ▼ (${conflicts.length} issue${plural ? "s" : ""})`}
+          </button>
+          {expanded && (
+            <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0 0" }}>
+              {conflicts.map((c, i) => (
+                <li key={i} style={{ borderTop: "1px solid #fde68a", paddingTop: "8px", marginTop: "8px" }}>
+                  <p style={{ fontSize: "11px", fontWeight: 600, color: "#92400e", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>
+                    {c.rule.replace(/_/g, " ")}
+                  </p>
+                  <p style={{ fontSize: "12px", color: "#78350f", lineHeight: "1.6", marginBottom: c.fields.length > 0 ? "2px" : "0" }}>{c.detail}</p>
+                  {c.fields.length > 0 && (
+                    <p style={{ fontSize: "11px", color: "#a16207", fontFamily: "'DM Mono', monospace" }}>Fields: {c.fields.join(", ")}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Small inline marker shown next to a field value involved in a conflict.
+function ConflictFlag({ label }: { label: string }) {
+  return (
+    <span
+      title={`Data conflict: ${label}`}
+      style={{
+        display: "inline-block", marginLeft: "6px",
+        padding: "1px 5px", borderRadius: "4px",
+        background: "#fef3c7", color: "#92400e",
+        fontSize: "10px", fontWeight: 700,
+        fontFamily: "'DM Mono', monospace",
+        border: "1px solid #fde68a",
+        cursor: "help", verticalAlign: "middle",
+      }}
+    >!</span>
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────
 
 export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders, boc3, rejectedInsurance, suspectSuccessors }: Props) {
@@ -2941,6 +3126,11 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
       const newCancel   = dateOnly(ins.cancellation_date) ?? "";
 
+      // Prefer no-cancellation (active) over cancelled; among both cancelled, keep later date
+      const existIsActive = existCancel === "";
+      const newIsActive   = newCancel === "";
+      if (newIsActive && !existIsActive) { map.set(key, ins); continue; }
+      if (!newIsActive && existIsActive) continue;
       if (newCancel > existCancel) map.set(key, ins);
 
     }
@@ -3065,7 +3255,23 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
     : null;
 
+  // ── Data conflict detection ───────────────────────────────────────────────
 
+  const dataConflicts = detectDataConflicts(carrier, dedupedInsurance, inspections, sms);
+
+  // Override badge to uncertainty state when any conflict touches authority/revocation fields.
+  const _authorityConflictRules = new Set([
+    "authority_not_both_active_and_revoked",
+    "revoked_requires_revocation_event",
+    "intrastate_not_rendered_as_revoked",
+  ]);
+  const effectiveRisk = dataConflicts.some(c => _authorityConflictRules.has(c.rule))
+    ? { label: "NO DATA — Verify with FMCSA", color: "#64748b", bg: "#f8fafc" }
+    : risk;
+
+  // Convenience flags for inline ConflictFlag markers
+  const hasFleetConflict = dataConflicts.some(c => c.rule === "fleet_data_not_asymmetric");
+  const hasInsDateConflict = dataConflicts.some(c => c.rule === "insurance_dates_internally_consistent");
 
   // Bucket boundaries
 
@@ -3421,7 +3627,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
         </Link>
 
-
+        <DataConflictBanner conflicts={dataConflicts} />
 
         {/* Print-only cover page */}
 
@@ -3473,9 +3679,9 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
 
-              {risk
+              {effectiveRisk
 
-                ? <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: risk.bg, color: risk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{risk.label}</span>
+                ? <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: effectiveRisk.bg, color: effectiveRisk.color, fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>{effectiveRisk.label}</span>
 
                 : <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: "20px", background: "#f1f5f9", color: "#64748b", fontSize: "12px", fontWeight: 700, fontFamily: "'DM Mono', monospace", letterSpacing: "0.5px" }}>No Authority Issues Found</span>
 
@@ -3604,6 +3810,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                 <p style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>
 
                   {carrier.total_drivers ?? 0} driver{(carrier.total_drivers ?? 0) !== 1 ? "s" : ""}, {carrier.total_trucks ?? 0} truck{(carrier.total_trucks ?? 0) !== 1 ? "s" : ""}
+                  {hasFleetConflict && <ConflictFlag label="fleet data asymmetry — one count is zero" />}
 
                 </p>
 
@@ -3747,11 +3954,11 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
                 const s = authorityDerived.status;
 
-                const bg  = s === "active" ? "#f0fdf4" : s === "not_required" ? "#f8fafc" : "#fef2f2";
+                const bg  = s === "active" ? "#f0fdf4" : s === "not_required" ? "#f8fafc" : s === "unknown" ? "#fffbeb" : "#fef2f2";
 
-                const col = s === "active" ? "#22c55e" : s === "not_required" ? "#64748b" : "#ef4444";
+                const col = s === "active" ? "#22c55e" : s === "not_required" ? "#64748b" : s === "unknown" ? "#92400e" : "#ef4444";
 
-                const label = s === "active" ? "ACTIVE" : s === "not_required" ? "NOT REQUIRED" : "INACTIVE";
+                const label = s === "active" ? "ACTIVE" : s === "not_required" ? "NOT REQUIRED" : s === "unknown" ? "VERIFY WITH FMCSA" : "INACTIVE";
 
                 return (
 
@@ -3857,23 +4064,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
           <>
 
-            {/* Bucket 1 — oldest: more than 24 months before accident (chronological order) */}
-
-            <TimeBucketSection
-
-              label={`More Than 24 Months Before ${fmtDate(accidentDate)}`}
-
-              sub={`Before ${fmtDate(cutoff24)}`}
-
-              bucketStart={null}
-
-              bucketEnd={cutoff24Minus1}
-
-              {...sharedProps}
-
-            />
-
-            {/* Bucket 2 — within 24 months before accident (most critical for litigation) */}
+            {/* Bucket 1 — within 24 months before accident (most critical for litigation) */}
 
             <TimeBucketSection
 
@@ -3886,6 +4077,22 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
               bucketStart={cutoff24}
 
               bucketEnd={accidentDate}
+
+              {...sharedProps}
+
+            />
+
+            {/* Bucket 2 — older history: more than 24 months before accident */}
+
+            <TimeBucketSection
+
+              label={`More Than 24 Months Before ${fmtDate(accidentDate)}`}
+
+              sub={`Before ${fmtDate(cutoff24)}`}
+
+              bucketStart={null}
+
+              bucketEnd={cutoff24Minus1}
 
               {...sharedProps}
 
