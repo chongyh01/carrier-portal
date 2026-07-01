@@ -62,12 +62,11 @@ async function fetchInspections(dot: string): Promise<Inspection[]> {
 }
 
 async function fetchViolations(dot: string): Promise<Violation[]> {
-  // inspection_id FK is not populated in the import pipeline, so we can't join directly.
-  // Instead, fetch violations and inspections separately, then distribute violation rows
-  // across inspections in date order using each inspection's total_violations count.
+  // Try to fetch violations with embedded inspection date via FK.
+  // Falls back to the distribution approach if the embed fails or returns no FK dates.
   const [violRes, inspRes] = await Promise.all([
     fetch(
-      `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at&dot_number=eq.${dot}&limit=500`,
+      `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at,inspection_id,inspections(inspection_date)&dot_number=eq.${dot}&limit=500`,
       { headers: HEADERS, cache: 'no-store' }
     ),
     fetch(
@@ -75,15 +74,47 @@ async function fetchViolations(dot: string): Promise<Violation[]> {
       { headers: HEADERS, cache: 'no-store' }
     ),
   ]);
-  if (!violRes.ok) return [];
-  const violations: Violation[] = await violRes.json();
-  if (inspRes.ok) {
+
+  let violations: Violation[] = [];
+
+  if (violRes.ok) {
+    try {
+      const raw: Array<{
+        violation_code?: string; description?: string; oos_indicator?: string;
+        unit_type?: string; basic_category?: string; imported_at?: string;
+        inspections?: { inspection_date?: string } | null;
+      }> = await violRes.json();
+      violations = raw.map(v => ({
+        violation_code: v.violation_code,
+        description: v.description,
+        oos_indicator: v.oos_indicator,
+        unit_type: v.unit_type,
+        basic_category: v.basic_category,
+        imported_at: v.imported_at,
+        inspection_date: v.inspections?.inspection_date ?? undefined,
+      }));
+    } catch {
+      return [];
+    }
+  } else {
+    // FK embed may have failed — retry without it
+    const fallbackRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/violations?select=violation_code,description,oos_indicator,unit_type,basic_category,imported_at&dot_number=eq.${dot}&limit=500`,
+      { headers: HEADERS, cache: 'no-store' }
+    );
+    if (!fallbackRes.ok) return [];
+    violations = await fallbackRes.json();
+  }
+
+  // Distribution fallback: assign inspection dates to violations still missing a date
+  const unfilled = violations.filter(v => !v.inspection_date);
+  if (unfilled.length > 0 && inspRes.ok) {
     const inspections: Array<{ inspection_date?: string; total_violations?: number }> = await inspRes.json();
     let idx = 0;
     for (const insp of inspections) {
       const count = insp.total_violations ?? 0;
-      for (let i = 0; i < count && idx < violations.length; i++, idx++) {
-        violations[idx].inspection_date = insp.inspection_date;
+      for (let i = 0; i < count && idx < unfilled.length; i++, idx++) {
+        unfilled[idx].inspection_date = insp.inspection_date;
       }
     }
   }

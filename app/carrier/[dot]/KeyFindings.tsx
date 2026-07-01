@@ -171,19 +171,34 @@ export default function KeyFindings({
   }
 
   // ── 6. Violations + OOS combined (priority 4) ─────────────
-  const totalViolations = inspections.reduce(
+  // Filter to 24-month window when accidentDate is set (same scope as inspection count)
+  const inspInScope = accDate && cutoff24
+    ? inspections.filter(insp => {
+        const d = parseDateStr(insp.inspection_date);
+        return d !== null && d >= cutoff24 && d <= accDate;
+      })
+    : inspections;
+  const violLabel = accDate && cutoff24 ? " within 24 months before accident" : "";
+
+  const totalViolations = inspInScope.reduce(
     (sum, insp) => sum + (insp.total_violations ?? 0),
     0,
   );
-  const oosFromInspections = inspections.reduce(
+  const oosFromInspections = inspInScope.reduce(
     (sum, insp) => sum + (insp.oos_vehicles ?? 0),
     0,
   );
-  const oosTotal = oosFromInspections + oosOrders.length;
+  const oosInScope = accDate && cutoff24
+    ? oosOrders.filter(o => {
+        const d = parseDateStr(o.order_date);
+        return d !== null && d >= cutoff24 && d <= accDate;
+      })
+    : oosOrders;
+  const oosTotal = oosFromInspections + oosInScope.length;
   if (totalViolations > 0 || oosTotal > 0) {
     const parts: string[] = [];
-    if (totalViolations > 0) parts.push(`${totalViolations} violation${totalViolations !== 1 ? "s" : ""}`);
-    if (oosTotal > 0) parts.push(`${oosTotal} out-of-service event${oosTotal !== 1 ? "s" : ""}`);
+    if (totalViolations > 0) parts.push(`${totalViolations} violation${totalViolations !== 1 ? "s" : ""}${violLabel}`);
+    if (oosTotal > 0) parts.push(`${oosTotal} out-of-service event${oosTotal !== 1 ? "s" : ""}${violLabel}`);
     bullets.push({
       text: parts.join(", "),
       color: oosTotal > 0 ? "red" : "amber",
