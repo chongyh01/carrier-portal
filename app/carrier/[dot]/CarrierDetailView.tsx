@@ -2981,6 +2981,14 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   const histOosDriver  = inspections.reduce((s, i) => s + (i.oos_drivers  ?? 0), 0);
   const histRevocationCount = revocations.length + realRevocationsInAuthHist.length;
 
+  const hasMeaningfulHistory =
+    cleanedCrashes.length > 0 ||
+    inspections.some(i => (i.total_violations ?? 0) > 0 || (i.oos_vehicles ?? 0) > 0 || (i.oos_drivers ?? 0) > 0) ||
+    oosOrders.length > 0 ||
+    insuranceLapses.length > 0 ||
+    hasAnyRealRevocation ||
+    rejectedInsurance.length > 0;
+
   // ── Status labels for snapshot / issues table ────────────────────────────
   const usdotStatusLabel = (carrier.status ?? "UNKNOWN").toUpperCase();
 
@@ -3313,51 +3321,83 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
                   {
                     issue: "USDOT Status",
                     finding: usdotStatusLabel,
-                    why: "Confirms FMCSA registration. INACTIVE carriers may have ceased operations or lost authority.",
+                    why: isCarrierActive ? "Registration active." : "Registration inactive — carrier may have ceased operations or lost authority.",
                     flagColor: isCarrierActive ? undefined : "#fef2f2",
                   },
                   {
                     issue: "Operating Authority",
                     finding: authorityStatusLabel,
-                    why: isForHire ? "For-hire carriers must hold active MC authority to operate legally. Revoked = no legal right to operate for hire." : "Private carriers generally do not require MC authority.",
+                    why: isForHire
+                      ? (hasAnyRealRevocation && isCarrierInactive)
+                        ? "Authority revoked — no legal right to operate for hire."
+                        : hasAnyRealRevocation
+                          ? "Active authority; prior revocation on record — check dates against incident."
+                          : "Active MC authority on file."
+                      : "Private carrier — MC authority not required.",
                     flagColor: (hasAnyRealRevocation && isCarrierInactive) ? "#fef2f2" : hasAnyRealRevocation ? "#fffbeb" : undefined,
                   },
                   {
                     issue: "BI&PD Insurance",
                     finding: insuranceStatusLabel,
-                    why: isForHire ? "Federal law requires minimum $750K BI&PD for most for-hire carriers. No active policy = potential uninsured operation." : "Private carriers may not require FMCSA insurance filing.",
-                    flagColor: (!activeBipd && isForHire && dedupedInsurance.length === 0) ? "#fef2f2" : (!activeBipd && isForHire) ? "#fffbeb" : undefined,
+                    why: !isForHire
+                      ? "Private carrier — FMCSA insurance filing not required."
+                      : isCarrierInactive && !activeBipd
+                        ? "Carrier is inactive. Verify coverage for the specific date of incident."
+                        : activeBipd
+                          ? "Active BI&PD policy on file."
+                          : "No active BI&PD policy found. Verify for date of incident.",
+                    flagColor: (!activeBipd && isForHire && isCarrierActive && dedupedInsurance.length === 0) ? "#fef2f2" : (!activeBipd && isForHire && isCarrierActive) ? "#fffbeb" : undefined,
                   },
                   {
                     issue: "BOC-3 Process Agent",
                     finding: boc3Label,
-                    why: "Required to hold operating authority. Designates who to serve legal papers on. Absence may indicate compliance gap.",
+                    why: boc3.length > 0
+                      ? "Designates who to serve legal papers on."
+                      : isForHire
+                        ? "No agent on file — verify before serving."
+                        : "Private carrier — BOC-3 not required.",
                     flagColor: (boc3.length === 0 && isForHire) ? "#fffbeb" : undefined,
                   },
                   {
                     issue: "Safety Rating",
-                    finding: ratingLabel + (ratingOutdated ? " (rated 3+ years ago)" : ""),
-                    why: "FMCSA compliance assessment. UNSATISFACTORY = documented safety violations. Not rated = no compliance review on file.",
+                    finding: ratingLabel + (ratingOutdated ? " (3+ years old)" : ""),
+                    why: ratingLabel.toLowerCase().includes("unsatisfactory")
+                      ? "Documented safety violations on record."
+                      : ratingLabel === "Not rated"
+                        ? "No compliance review on file."
+                        : ratingOutdated
+                          ? "Rating may not reflect current compliance."
+                          : "Satisfactory rating on file.",
                     flagColor: ratingLabel.toLowerCase().includes("unsatisfactory") ? "#fef2f2" : ratingOutdated ? "#fffbeb" : undefined,
                   },
                   {
-                    issue: "Crashes (last 24 months)",
+                    issue: "Crashes (last 24 mo.)",
                     finding: safer24Crashes.length === 0
                       ? "None on record"
                       : `${safer24Crashes.length} crash${safer24Crashes.length !== 1 ? "es" : ""}${safer24Fatals > 0 ? `, ${safer24Fatals} fatal` : ""}${safer24Injuries > 0 ? `, ${safer24Injuries} with injuries` : ""}`,
-                    why: "FMCSA 24-month crash data is used in safety fitness assessments. Fatal crashes are key evidence in litigation.",
+                    why: safer24Fatals > 0
+                      ? "Fatal crashes — key evidence in litigation."
+                      : safer24Crashes.length > 0
+                        ? "Crash history within FMCSA 24-month window."
+                        : "No crash record in 24-month window.",
                     flagColor: safer24Fatals > 0 ? "#fef2f2" : safer24Crashes.length > 0 ? "#fffbeb" : undefined,
                   },
                   {
-                    issue: "Authority Revocations (historical)",
+                    issue: "Authority Revocations",
                     finding: histRevocationCount === 0 ? "None on record" : `${histRevocationCount} revocation event${histRevocationCount !== 1 ? "s" : ""}`,
-                    why: "History of revocations shows prior compliance failures. Multiple events indicate a pattern.",
+                    why: histRevocationCount === 0
+                      ? "No revocation history."
+                      : histRevocationCount >= 3
+                        ? "Pattern of revocations — compliance concern."
+                        : "Prior revocation — check if active at time of incident.",
                     flagColor: histRevocationCount > 0 ? "#fffbeb" : undefined,
                   },
                   {
                     issue: "Insurance Lapses (BI&PD)",
-                    finding: insuranceLapses.length === 0 ? "None detected" : `${insuranceLapses.length} gap${insuranceLapses.length !== 1 ? "s" : ""} detected in BI&PD coverage`,
-                    why: "Coverage gaps mean the carrier operated without required insurance. Each gap is a potential uninsured period.",
+                    finding: insuranceLapses.length === 0 ? "None detected" : `${insuranceLapses.length} gap${insuranceLapses.length !== 1 ? "s" : ""} in BI&PD coverage`,
+                    why: insuranceLapses.length === 0
+                      ? "Continuous coverage detected."
+                      : "Gaps may represent uninsured periods — verify against incident date.",
                     flagColor: insuranceLapses.length >= 3 ? "#fef2f2" : insuranceLapses.length > 0 ? "#fffbeb" : undefined,
                   },
                 ].map(({ issue, finding, why, flagColor }, i) => (
@@ -3375,109 +3415,71 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
         {/* ─── SECTION 5: SAFER 24-Month Snapshot ───────────────────────────── */}
         <div style={{ background: "white", borderRadius: "12px", padding: "20px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
           <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "14px" }}>SAFER 24-Month Snapshot</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            {/* Left: inspection/crash counts */}
-            <div style={{ overflowX: "auto" }}>
-              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Activity (Last 24 Months)</p>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <tbody>
-                  {[
-                    ["Inspections",        String(safer24Inspections.length)],
-                    ["Vehicle OOS Events", `${safer24VehicleOos}`],
-                    ["Driver OOS Events",  `${safer24DriverOos}`],
-                    ["Crashes",            String(safer24Crashes.length)],
-                    ["Fatal Crashes",      String(safer24Fatals)],
-                    ["Injury Crashes",     String(safer24Injuries)],
-                  ].map(([label, value], i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{label}</td>
-                      <td style={{ padding: "7px 10px", fontWeight: 600, color: "#0f172a", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Right: OOS % vs national average */}
-            <div style={{ overflowX: "auto" }}>
-              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>OOS Rate vs National Average</p>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    {["", "Carrier", "Natl. Avg."].map(h => (
-                      <th key={h} style={{ padding: "6px 10px", textAlign: "right", fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+          {safer24Inspections.length === 0 && safer24Crashes.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>No inspections or crashes recorded in FMCSA data for the last 24 months.</p>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: safer24Inspections.length > 0 ? "1fr 1fr" : "1fr", gap: "16px" }}>
+              {/* Left: activity counts */}
+              <div style={{ overflowX: "auto" }}>
+                <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Activity (Last 24 Months)</p>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <tbody>
+                    {[
+                      safer24Inspections.length > 0 ? ["Inspections", String(safer24Inspections.length)] : null,
+                      safer24Inspections.length > 0 ? ["Vehicle OOS", `${safer24VehicleOos}`] : null,
+                      safer24Inspections.length > 0 ? ["Driver OOS",  `${safer24DriverOos}`]  : null,
+                      ["Crashes",      String(safer24Crashes.length)],
+                      safer24Fatals > 0   ? ["Fatal Crashes",  String(safer24Fatals)]   : null,
+                      safer24Injuries > 0 ? ["Injury Crashes", String(safer24Injuries)] : null,
+                    ].filter((r): r is [string, string] => r !== null).map(([label, value], i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{label}</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 600, color: "#0f172a", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>{value}</td>
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>Vehicle OOS %</td>
-                    <td style={{ padding: "7px 10px", fontWeight: 700, textAlign: "right", fontFamily: "'DM Mono', monospace",
-                      color: safer24VehicleOosPct != null && safer24VehicleOosPct > 21 ? "#dc2626" : "#0f172a" }}>
-                      {safer24VehicleOosPct != null ? `${safer24VehicleOosPct}%` : "—"}
-                    </td>
-                    <td style={{ padding: "7px 10px", color: "#64748b", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>~20.7%</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>Driver OOS %</td>
-                    <td style={{ padding: "7px 10px", fontWeight: 700, textAlign: "right", fontFamily: "'DM Mono', monospace",
-                      color: safer24DriverOosPct != null && safer24DriverOosPct > 6 ? "#dc2626" : "#0f172a" }}>
-                      {safer24DriverOosPct != null ? `${safer24DriverOosPct}%` : "—"}
-                    </td>
-                    <td style={{ padding: "7px 10px", color: "#64748b", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>~5.4%</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "8px", lineHeight: "1.4" }}>
-                Natl. avg.: approx. 2023–2024 FMCSA data.{" "}
-                {safer24Inspections.length === 0
-                  ? "No inspections in last 24 months — rate not calculable."
-                  : safer24VehicleOosPct != null && safer24VehicleOosPct > 21
-                    ? "Vehicle OOS rate above national average."
-                    : "Vehicle OOS rate at or below national average."}
-              </p>
+                  </tbody>
+                </table>
+              </div>
+              {/* Right: OOS % vs national average — only if inspections exist */}
+              {safer24Inspections.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>OOS Rate vs National Avg.</p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        {["", "Carrier", "Natl."].map(h => (
+                          <th key={h} style={{ padding: "6px 10px", textAlign: "right", fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>Vehicle OOS</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 700, textAlign: "right", fontFamily: "'DM Mono', monospace", color: safer24VehicleOosPct != null && safer24VehicleOosPct > 21 ? "#dc2626" : "#0f172a" }}>
+                          {safer24VehicleOosPct != null ? `${safer24VehicleOosPct}%` : "—"}
+                        </td>
+                        <td style={{ padding: "7px 10px", color: "#64748b", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>~20.7%</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: "7px 10px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>Driver OOS</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 700, textAlign: "right", fontFamily: "'DM Mono', monospace", color: safer24DriverOosPct != null && safer24DriverOosPct > 6 ? "#dc2626" : "#0f172a" }}>
+                          {safer24DriverOosPct != null ? `${safer24DriverOosPct}%` : "—"}
+                        </td>
+                        <td style={{ padding: "7px 10px", color: "#64748b", textAlign: "right", fontFamily: "'DM Mono', monospace" }}>~5.4%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "8px", lineHeight: "1.4" }}>
+                    {safer24VehicleOosPct != null && safer24VehicleOosPct > 21 ? "Vehicle OOS above national average." : "Vehicle OOS at or below national average."}
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
 
-        {/* ─── SECTION 6: Historical FMCSA Records Found ─────────────────────── */}
-        <div style={{ background: "white", borderRadius: "12px", padding: "20px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
-          <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "14px" }}>Historical FMCSA Records Found</p>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-              <thead>
-                <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
-                  {["Category", "Total Records", "Notes"].map(h => (
-                    <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["Crashes",            String(cleanedCrashes.length),    `${histFatals} fatal, ${histInjuries} with injuries`],
-                  ["Inspections",        String(histInspectionCount),       `${histViolationCount} total violations across all inspections`],
-                  ["Vehicle OOS Events", String(histOosVehicle),            "Across all inspection records"],
-                  ["Driver OOS Events",  String(histOosDriver),             "Across all inspection records"],
-                  ["OOS Orders",         String(oosOrders.length),          "Formal out-of-service orders filed with FMCSA"],
-                  ["Authority Records",  String(authorityHistory.length),   `${histRevocationCount} revocation event${histRevocationCount !== 1 ? "s" : ""}`],
-                  ["Insurance Records",  String(dedupedInsurance.length),   `${insuranceLapses.length} BI&PD coverage gap${insuranceLapses.length !== 1 ? "s" : ""} detected`],
-                  ["Rejected Filings",   String(rejectedInsurance.length),  "Insurance forms rejected by FMCSA"],
-                ].map(([cat, count, note], i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #f8fafc" }}>
-                    <td style={{ padding: "8px 12px", fontWeight: 600, color: "#374151", fontSize: "12px" }}>{cat}</td>
-                    <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{count}</td>
-                    <td style={{ padding: "8px 12px", color: "#64748b", fontSize: "11px" }}>{note}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "10px", lineHeight: "1.5" }}>
-            Note: Historical totals cover all available FMCSA records, not just the 24-month SAFER window above. The full record set follows in the timeline below.
-          </p>
-        </div>
-
-        {/* ─── SECTION 7: Full History Timeline ──────────────────────────────── */}
-        <>
+        {/* ─── SECTION 6: Full History Timeline (only shown when meaningful events exist) ── */}
+        {hasMeaningfulHistory && <>
             <TimeBucketSection
 
               label="Full History Timeline"
@@ -3604,54 +3606,9 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
             )}
 
-        </>
+        </>}
 
-        {/* ─── SECTION 8: Safety Rating ──────────────────────────────────────── */}
-        {(carrier.safety_rating || carrier.safety_rating_date || carrier.review_date) && (
-          <div style={{ background: "white", borderRadius: "12px", padding: "20px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "16px" }}>
-            <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "14px" }}>Safety Rating</p>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <tbody>
-                  {([
-                    ["Safety Rating",  ratingLabel],
-                    carrier.safety_rating_date ? ["Rating Date",   fmtDate(carrier.safety_rating_date)] : null,
-                    carrier.review_date         ? ["Review Date",  fmtDate(carrier.review_date)]         : null,
-                    carrier.review_type         ? ["Review Type",  carrier.review_type]                  : null,
-                  ] as ([string,string]|null)[]).filter((r): r is [string, string] => r !== null).map(([label, value], i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "8px 12px", fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontWeight: 500, width: "38%" }}>{label}</td>
-                      <td style={{ padding: "8px 12px", fontWeight: 600, color: (ratingLabel.toLowerCase().includes("unsatisfactory") && label === "Safety Rating") ? "#dc2626" : "#0f172a" }}>{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {ratingOutdated && (
-              <p style={{ fontSize: "11px", color: "#92400e", fontFamily: "'DM Mono', monospace", marginTop: "10px" }}>
-                ⚠ Rating is 3+ years old and may not reflect current compliance. Verify with FMCSA.
-              </p>
-            )}
-            <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "8px" }}>
-              Source: FMCSA Carrier Census (az4n-8mr2) · Updated daily
-            </p>
-          </div>
-        )}
-
-        {/* ─── SECTION 9: Bottom Line ─────────────────────────────────────────── */}
-        <div style={{ background: "#f8fafc", borderRadius: "12px", padding: "20px 28px", border: "1px solid #e2e8f0", marginBottom: "20px" }}>
-          <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "12px" }}>Bottom Line</p>
-          {summaryLines.map((line, i) => (
-            <p key={i} style={{ fontSize: "13px", color: "#374151", lineHeight: "1.75", marginBottom: i < summaryLines.length - 1 ? "4px" : "0" }}>{line}</p>
-          ))}
-          <p style={{ fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace", marginTop: "14px", lineHeight: "1.6", borderTop: "1px solid #e2e8f0", paddingTop: "12px" }}>
-            This report is compiled from FMCSA public records (data.transportation.gov) and is provided for informational purposes only.
-            It does not constitute legal advice and is not a substitute for verification directly with FMCSA SAFER.
-            FMCSA data updates daily — records may not reflect same-day changes.
-          </p>
-        </div>
-
-                {/* Section — Chameleon Carrier Detection */}
+        {/* Section — Chameleon Carrier Detection */}
 
         {suspectSuccessors.length > 0 && (
 
@@ -3748,130 +3705,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           </div>
 
         )}
-
-
-
-        {/* Section — BOC3 Process Agent */}
-
-        {(() => {
-
-          const isForHireCarrier = !!(carrier.mc_number && carrier.mc_number.trim().toUpperCase() !== "MC");
-
-          if (boc3.length === 0 && !isForHireCarrier) return null;
-
-          return (
-
-            <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: boc3.length === 0 ? "1px solid #fcd34d" : "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-
-              <h2 style={{ fontSize: "15px", fontWeight: 600, color: boc3.length === 0 ? "#92400e" : "#0f172a", marginBottom: "8px" }}>
-
-                Who to Serve Legal Papers On (BOC3 Process Agent)
-
-              </h2>
-
-              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px" }}>
-
-                <p style={{ fontSize: "12px", color: "#1e40af", margin: 0, lineHeight: "1.5" }}>
-
-                  A <strong>BOC-3 form</strong> designates a process agent — the person authorized to receive legal papers (summons, complaints) on behalf of the carrier. Federal law requires for-hire carriers to designate one to obtain operating authority.
-
-                </p>
-
-              </div>
-
-              {boc3.length === 0 ? (
-
-                <p style={{ fontSize: "13px", color: "#92400e", lineHeight: "1.5", margin: 0 }}>
-
-                  ⚠ No BOC3 process agent on file. For-hire carriers must designate a process agent to hold operating authority — this absence may indicate a compliance gap. Verify directly with FMCSA SAFER before serving.
-
-                </p>
-
-              ) : (
-
-                <>
-
-                  {boc3.length > 1 && (
-
-                    <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px" }}>
-
-                      <p style={{ fontSize: "12px", color: "#92400e", margin: 0 }}>
-
-                        {boc3.length} process agents on file — serve the agent in the <strong>state where the accident occurred</strong>.
-
-                      </p>
-
-                    </div>
-
-                  )}
-
-                  {boc3.map((agent, i) => {
-
-                    const agentNameLower = (agent.company_name ?? "").toLowerCase();
-
-                    const carrierLegalLower = (carrier.legal_name ?? "").toLowerCase();
-
-                    const carrierDbaLower = (carrier.dba_name ?? "").toLowerCase();
-
-                    const isSelf = (carrierLegalLower.length > 3 && agentNameLower.includes(carrierLegalLower))
-
-                      || (carrierDbaLower.length > 3 && agentNameLower.includes(carrierDbaLower));
-
-                    return (
-
-                      <div key={i} style={{ padding: "14px 0", borderBottom: i < boc3.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-
-                          <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.5px", margin: 0 }}>Serve legal papers on</p>
-
-                          <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", padding: "1px 8px", borderRadius: "10px", background: isSelf ? "#fef3c7" : "#f0fdf4", color: isSelf ? "#92400e" : "#166534", fontWeight: 600 }}>
-
-                            {isSelf ? "Self-represented" : "Third-party agent"}
-
-                          </span>
-
-                        </div>
-
-                        <p style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>{agent.company_name ?? "—"}</p>
-
-                        {agent.attention_to && (
-
-                          <p style={{ fontSize: "12px", color: "#64748b", marginBottom: "2px" }}>Contact: {agent.attention_to}</p>
-
-                        )}
-
-                        <p style={{ fontSize: "12px", color: "#64748b", marginBottom: agent.state ? "2px" : "0" }}>
-
-                          Address: {[agent.address, agent.city, agent.state, agent.zip_code].filter(Boolean).join(", ")}
-
-                          {agent.country && agent.country !== "US" && ` (${agent.country})`}
-
-                        </p>
-
-                        {agent.state && (
-
-                          <p style={{ fontSize: "12px", color: "#64748b" }}>State: {stateName(agent.state)}</p>
-
-                        )}
-
-                      </div>
-
-                    );
-
-                  })}
-
-                </>
-
-              )}
-
-              <p style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "12px" }}>Source: FMCSA BOC-3 Filings (mwzj-jmgg) · Updated daily</p>
-
-            </div>
-
-          );
-
-        })()}
 
 
 
@@ -3993,28 +3826,37 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
 
 
-        <CarrierTimeline
+        {/* Authority/Insurance Timeline — shown when there are dated events */}
+        {hasMeaningfulHistory && (
+          <CarrierTimeline
 
-          carrier={carrier}
+            carrier={carrier}
 
-          crashes={cleanedCrashes}
+            crashes={cleanedCrashes}
 
-          inspections={inspections}
+            inspections={inspections}
 
-          violations={violations}
+            violations={violations}
 
-          insurance={dedupedInsurance}
+            insurance={dedupedInsurance}
 
-          authorityHistory={authorityHistory}
+            authorityHistory={authorityHistory}
 
-          alerts={alerts}
+            alerts={alerts}
 
-          oosOrders={oosOrders}
+            oosOrders={oosOrders}
 
-          rejectedInsurance={rejectedInsurance}
+            rejectedInsurance={rejectedInsurance}
 
-        />
+          />
+        )}
 
+        {/* ─── Final Note ──────────────────────────────────────────────────────── */}
+        <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "14px 20px", border: "1px solid #e2e8f0", marginBottom: "20px" }}>
+          <p style={{ fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace", margin: 0, lineHeight: "1.6" }}>
+            Compiled from FMCSA public records (data.transportation.gov). For informational purposes only — not legal advice. Verify findings directly with FMCSA SAFER before relying on them in litigation. Data updates daily; records may not reflect same-day changes.
+          </p>
+        </div>
 
       </div>
 
