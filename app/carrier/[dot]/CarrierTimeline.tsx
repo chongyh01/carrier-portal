@@ -34,7 +34,6 @@ type Props = {
   alerts: CarrierAlert[];
   oosOrders: OosOrder[];
   rejectedInsurance: RejectedInsurance[];
-  accidentDate?: string;
 };
 
 const MAX_EVENTS = 60;
@@ -229,13 +228,6 @@ export default function CarrierTimeline(props: Props) {
   const overflow = allEvents.length > MAX_EVENTS ? allEvents.length - MAX_EVENTS : 0;
   const events = overflow > 0 ? allEvents.slice(0, MAX_EVENTS) : allEvents;
 
-  const accDate = props.accidentDate && isValidDate(props.accidentDate) ? props.accidentDate : null;
-
-  // Index where we should insert the accident-date divider (first event with date <= accidentDate)
-  const accMarkerIndex = accDate
-    ? events.findIndex(ev => ev.date <= accDate)
-    : -1;
-
   // Unique legend categories actually used
   const usedCategories = Array.from(new Set(events.map(e => e.category)));
   const legendItems = LEGEND_CATEGORIES.filter(c => usedCategories.includes(c));
@@ -279,64 +271,20 @@ export default function CarrierTimeline(props: Props) {
             </div>
           )}
 
-          {/* "After Accident" label */}
-          {accDate && accMarkerIndex > 0 && (
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, marginLeft: 28 }}>
-              After accident
-            </div>
-          )}
-
           {/* Vertical timeline */}
           <div style={{ borderLeft: "2px solid #e2e8f0", paddingLeft: 20, marginLeft: 8 }}>
             {events.map((ev, idx) => {
               const s = CATEGORY_STYLE[ev.category];
-              const near = accDate ? daysBetween(ev.date, accDate) <= 90 : false;
-              const isAfter = accDate ? ev.date > accDate : false;
 
               return (
                 <div key={idx}>
-                  {/* Accident date divider */}
-                  {accMarkerIndex === idx && (
-                    <div style={{
-                      borderTop: "2px dashed #ef4444",
-                      margin: "10px 0 14px -20px",
-                      paddingLeft: 20,
-                    }}>
-                      <span style={{
-                        display: "inline-block",
-                        marginTop: 6,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: "#ef4444",
-                        fontFamily: "monospace",
-                        letterSpacing: "0.04em",
-                      }}>
-                        ▼ ACCIDENT DATE — {fmtDate(accDate!)}
-                      </span>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 10 }}>
-                        Before accident
-                      </div>
-                    </div>
-                  )}
 
-                  <div style={{
-                    position: "relative",
-                    marginBottom: 14,
-                    ...(near && !isAfter ? {
-                      borderLeft: `3px solid ${s.color}`,
-                      paddingLeft: 10,
-                      marginLeft: -2,
-                      backgroundColor: `${s.color}08`,
-                      borderRadius: "0 6px 6px 0",
-                      paddingTop: 4,
-                      paddingBottom: 4,
-                    } : {}),
-                  }}>
+                  <div style={{ position: "relative", marginBottom: 14 }}>
                     {/* Colored dot with icon */}
                     <div style={{
                       position: "absolute",
-                      left: near && !isAfter ? -38 : -28,
-                      top: near && !isAfter ? 8 : 4,
+                      left: -28,
+                      top: 4,
                       width: 18,
                       height: 18,
                       borderRadius: "50%",
@@ -353,26 +301,11 @@ export default function CarrierTimeline(props: Props) {
                     </div>
 
                     <span style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.5 }}>
-                      <span style={{ fontWeight: near && !isAfter ? 700 : 600 }}>{fmtDate(ev.date)}</span>
+                      <span style={{ fontWeight: 600 }}>{fmtDate(ev.date)}</span>
                       {" — "}
                       <span style={{ color: s.color === "#6b7280" ? "#475569" : s.color, fontWeight: 500 }}>
                         {ev.label}
                       </span>
-                      {near && !isAfter && accDate && (
-                        <span style={{
-                          marginLeft: 8,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: "#ef4444",
-                          fontFamily: "monospace",
-                          background: "#fef2f2",
-                          border: "1px solid #fecaca",
-                          borderRadius: 4,
-                          padding: "1px 5px",
-                        }}>
-                          {daysBetween(ev.date, accDate)} days from accident
-                        </span>
-                      )}
                     </span>
                   </div>
                 </div>

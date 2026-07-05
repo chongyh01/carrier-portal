@@ -8,7 +8,6 @@ import Link from "next/link";
 
 import cfrJson from "./cfr_descriptions.json";
 
-import KeyFindings from "./KeyFindings";
 
 import CarrierTimeline from "./CarrierTimeline";
 
@@ -418,41 +417,6 @@ function insuranceTypeLabel(code?: string | null): string {
 
 
 
-function isInsuranceActiveOn(ins: Insurance, accidentDate: string): boolean {
-
-  const eff = dateOnly(ins.effective_date);
-
-  const cancel = dateOnly(ins.cancellation_date);
-
-  if (!eff || eff > accidentDate) return false;
-
-  if (cancel && cancel < accidentDate) return false;
-
-  return true;
-
-}
-
-
-
-function isAuthorityActiveOn(a: AuthorityRecord, accidentDate: string): boolean {
-
-  // INVOL REV and REJECTED records are not active grant periods
-
-  const s = (a.status ?? "").toUpperCase();
-
-  if (s.includes("REVOC") || s === "REJECTED") return false;
-
-  const eff = dateOnly(a.effective_date);
-
-  const rev = dateOnly(a.revocation_date);
-
-  if (!eff || eff > accidentDate) return false;
-
-  if (rev && rev < accidentDate) return false;
-
-  return true;
-
-}
 
 
 
@@ -671,12 +635,6 @@ type TimeBucketProps = {
 
   rejectedInsurance: RejectedInsurance[];
 
-  accidentDate?: string;
-
-  accidentInsuranceStatus?: "active" | "inactive" | "not_required" | "unknown" | null;
-
-  accidentAuthorityStatus?: "active" | "inactive" | "not_required" | "unknown" | null;
-
 };
 
 
@@ -689,8 +647,7 @@ function TimeBucketSection({
 
   crashes, violations, insurance, oosOrders, revocations, authorityHistory, inspections,
 
-  carrier, sms, rejectedInsurance, accidentDate,
-  accidentInsuranceStatus, accidentAuthorityStatus,
+  carrier, sms, rejectedInsurance,
 
 }: TimeBucketProps) {
 
@@ -815,36 +772,6 @@ function TimeBucketSection({
 
         </div>
 
-        {accidentDate && accidentInsuranceStatus != null && accidentAuthorityStatus != null && (() => {
-          const insLabel =
-            accidentInsuranceStatus === "active"       ? "Insurance ACTIVE"
-            : accidentInsuranceStatus === "not_required" ? "Insurance NOT REQUIRED"
-            : accidentInsuranceStatus === "unknown"    ? "Insurance UNVERIFIED"
-            : "Insurance LAPSED";
-          const authLabel =
-            accidentAuthorityStatus === "active"       ? "Authority ACTIVE"
-            : accidentAuthorityStatus === "not_required" ? "Authority NOT REQUIRED"
-            : accidentAuthorityStatus === "unknown"    ? "Authority UNVERIFIED"
-            : "Authority REVOKED";
-          const insColor =
-            accidentInsuranceStatus === "active"       ? "#16a34a"
-            : accidentInsuranceStatus === "not_required" ? "#64748b"
-            : accidentInsuranceStatus === "unknown"    ? "#d97706"
-            : "#dc2626";
-          const authColor =
-            accidentAuthorityStatus === "active"       ? "#16a34a"
-            : accidentAuthorityStatus === "not_required" ? "#64748b"
-            : accidentAuthorityStatus === "unknown"    ? "#d97706"
-            : "#dc2626";
-          return (
-            <p style={{ fontSize: "11px", color: "#64748b", fontFamily: "'DM Mono', monospace", marginTop: "6px" }}>
-              On {fmtDate(accidentDate)}:{" "}
-              <span style={{ color: insColor, fontWeight: 700 }}>{insLabel}</span>
-              <span style={{ color: "#94a3b8", margin: "0 6px" }}>|</span>
-              <span style={{ color: authColor, fontWeight: 700 }}>{authLabel}</span>
-            </p>
-          );
-        })()}
 
       </div>
 
@@ -940,13 +867,7 @@ function TimeBucketSection({
                     const topStatesList = Object.entries(stateCnts).sort((a,b) => b[1]-a[1]).slice(0,5);
                     const stateCluster = topStatesList.find(([,cnt]) => cnt >= 2);
                     const firstFatal = bucketCrashes.find(c => (c.fatal ?? 0) > 0);
-                    const crashNear90 = accidentDate ? bucketCrashes.find(c => {
-                      if (!c.crash_date || !accidentDate) return false;
-                      const days = Math.round((new Date(accidentDate+'T00:00:00Z').getTime() - new Date(c.crash_date+'T00:00:00Z').getTime()) / 86400000);
-                      return days >= 0 && days <= 90;
-                    }) : null;
-                    const nearDays = crashNear90 && accidentDate ? Math.round((new Date(accidentDate+'T00:00:00Z').getTime() - new Date(crashNear90.crash_date!+'T00:00:00Z').getTime()) / 86400000) : null;
-                    if (!stateCluster && !firstFatal && !crashNear90 && topStatesList.length === 0) return null;
+                    if (!stateCluster && !firstFatal && topStatesList.length === 0) return null;
                     return (
                       <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
                         {topStatesList.length > 0 && (
@@ -962,11 +883,6 @@ function TimeBucketSection({
                         {firstFatal && (
                           <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
                             ⚠ Fatal crash: {fmtDate(firstFatal.crash_date)}{firstFatal.state ? `, ${stateName(firstFatal.state)}` : ""}
-                          </p>
-                        )}
-                        {crashNear90 && nearDays !== null && (
-                          <p style={{ fontSize: "12px", color: "#0f172a", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>
-                            Crash occurred {nearDays === 0 ? "on" : `${nearDays} day${nearDays !== 1 ? "s" : ""} before`} accident date
                           </p>
                         )}
                       </div>
@@ -1504,19 +1420,6 @@ function TimeBucketSection({
                             </li>
                           );
                         })()}
-                        {accidentDate && bucketOos.some(o => {
-                          if (!o.order_date || !accidentDate) return false;
-                          const oDate = dateOnly(o.order_date);
-                          if (!oDate) return false;
-                          const twoYearsBefore = new Date(accidentDate + "T00:00:00Z");
-                          twoYearsBefore.setUTCFullYear(twoYearsBefore.getUTCFullYear() - 2);
-                          return oDate >= twoYearsBefore.toISOString().slice(0,10);
-                        }) && (
-                          <li style={{ fontSize: "12px", color: "#92400e", lineHeight: "1.7", fontFamily: "'DM Mono', monospace", paddingLeft: "14px", position: "relative" }}>
-                            <span style={{ position: "absolute", left: 0, color: "#92400e" }}>⚠</span>
-                            Recent OOS orders within investigation period (within 2 years of accident date)
-                          </li>
-                        )}
 
                       </ul>
 
@@ -2238,317 +2141,6 @@ function durationLabel(start?: string | null, end?: string | null): string {
   if (years === 0 && months === 0) return "< 1 month";
   return [years > 0 ? `${years} year${years !== 1 ? "s" : ""}` : "", months > 0 ? `${months} month${months !== 1 ? "s" : ""}` : ""].filter(Boolean).join(", ");
 }
-
-// ─── Derive insurance/authority status with auditable basis ──
-
-// status: 'active' | 'inactive' | 'not_required'
-
-function deriveInsuranceBasis(
-
-  insurance: Insurance[],
-
-  accidentDate: string,
-
-  carrier: Carrier,
-
-): { status: "active" | "inactive" | "not_required" | "unknown"; basis: string } {
-
-  if (insurance.length === 0) {
-
-    if (isLikelyPrivateCarrier(carrier))
-
-      return {
-
-        status: "not_required",
-
-        basis: "No FMCSA insurance filings located. Private property carriers are generally not required to maintain FMCSA insurance filings.",
-
-      };
-
-    return { status: "unknown", basis: "No FMCSA insurance filings located in available records. Cannot confirm whether insurance was active or absent on this date — verify directly with FMCSA." };
-
-  }
-
-
-
-  // First: look for any policy directly active on the accident date
-
-  const activeAtDate = insurance.find(ins => isInsuranceActiveOn(ins, accidentDate));
-
-  if (activeAtDate) {
-
-    const policyRef = activeAtDate.policy_number ? `Policy ${activeAtDate.policy_number}` : "Policy on file";
-
-    const insurer = activeAtDate.insurer_name ?? "insurer on file";
-
-    const cancel = dateOnly(activeAtDate.cancellation_date);
-
-    const cancelClause = cancel ? "" : ", no cancellation before accident date";
-
-    return {
-
-      status: "active",
-
-      basis: `${policyRef} with ${insurer} effective ${fmtDate(activeAtDate.effective_date)}${cancelClause}.`,
-
-    };
-
-  }
-
-
-
-  // No directly active policy — find the most recent pre-accident policy
-
-  const candidates = insurance
-
-    .filter(ins => {
-
-      const eff = dateOnly(ins.effective_date);
-
-      return eff !== null && eff <= accidentDate;
-
-    })
-
-    .sort((a, b) => {
-
-      const effA = dateOnly(a.effective_date) ?? "";
-
-      const effB = dateOnly(b.effective_date) ?? "";
-
-      if (effB !== effA) return effB.localeCompare(effA);
-
-      const canA = dateOnly(a.cancellation_date) ?? "";
-
-      const canB = dateOnly(b.cancellation_date) ?? "";
-
-      if (canB !== canA) return canB.localeCompare(canA);
-
-      return (b.imported_at ?? "").localeCompare(a.imported_at ?? "");
-
-    });
-
-
-
-  if (candidates.length === 0)
-
-    return {
-
-      status: "inactive",
-
-      basis: `No insurance filing found with effective date on or before ${fmtDate(accidentDate)}.`,
-
-    };
-
-
-
-  const rec = candidates[0];
-
-  const cancel = dateOnly(rec.cancellation_date);
-
-  const policyRef = rec.policy_number ? `Policy ${rec.policy_number}` : "Policy on file";
-
-
-
-  // "Replaced" means a successor policy exists — we just can't locate it in available records
-
-  if ((rec.status ?? "").toLowerCase() === "replaced" && cancel && cancel <= accidentDate) {
-
-    return {
-
-      status: "unknown",
-
-      basis: `${policyRef} was replaced as of ${fmtDate(rec.cancellation_date)}. Replacement policy not located in available records — verify current insurance status directly with FMCSA.`,
-
-    };
-
-  }
-
-
-
-  if (cancel && cancel <= accidentDate) {
-
-    const yearsGap = parseInt(accidentDate.slice(0, 4)) - parseInt(cancel.slice(0, 4));
-
-    const longGap = yearsGap >= 3 ? ` Note: insurance lapsed ${yearsGap}+ years before accident date.` : "";
-
-    return {
-
-      status: "inactive",
-
-      basis: `${policyRef} cancelled on ${fmtDate(rec.cancellation_date)}. No active filing found as of ${fmtDate(accidentDate)}.${longGap}`,
-
-    };
-
-  }
-
-
-
-  const insurer = rec.insurer_name ?? "insurer on file";
-
-  const cancelClause = cancel ? "" : ", no cancellation before accident date";
-
-  return {
-
-    status: "active",
-
-    basis: `${policyRef} with ${insurer} effective ${fmtDate(rec.effective_date)}${cancelClause}.`,
-
-  };
-
-}
-
-
-
-function deriveAuthorityBasis(
-
-  authorityHistory: AuthorityRecord[],
-
-  accidentDate: string,
-
-  carrier: Carrier,
-
-): { status: "active" | "inactive" | "not_required" | "unknown"; basis: string } {
-
-  if (authorityHistory.length === 0) {
-
-    if (isLikelyPrivateCarrier(carrier))
-
-      return {
-
-        status: "not_required",
-
-        basis: "No operating authority records located. Private property carriers are generally not required to obtain FMCSA operating authority.",
-
-      };
-
-    return { status: "unknown", basis: "No operating authority records located in available records. Cannot confirm whether authority was active or absent on this date — verify directly with FMCSA." };
-
-  }
-
-
-
-  // Check for an active involuntary revocation window at the accident date.
-
-  // INVOL REV rows: effective_date = when revocation started,
-
-  // revocation_date = when it was discontinued (reinstated).
-
-  // If eff <= accidentDate AND (rev is null OR rev > accidentDate) → active revocation.
-
-  // Skip "DISCONTINUED REVOCATION" records — these mean the revocation was reversed and
-
-  // the carrier's authority was NOT actually lapsed.
-
-  const activeInvolRev = authorityHistory.find(a => {
-
-    if (!(a.status ?? "").toUpperCase().includes("INVOLUNTARY")) return false;
-
-    if ((a.reason ?? "").toUpperCase().includes("DISCONTINUED")) return false;
-
-    const eff = dateOnly(a.effective_date);
-
-    const rev = dateOnly(a.revocation_date);
-
-    if (!eff || eff > accidentDate) return false;
-
-    return !rev || rev > accidentDate;
-
-  });
-
-
-
-  if (activeInvolRev) {
-
-    return {
-
-      status: "inactive",
-
-      basis: `Involuntary revocation in effect from ${fmtDate(activeInvolRev.effective_date)}. No reinstatement found before ${fmtDate(accidentDate)}.`,
-
-    };
-
-  }
-
-
-
-  // No active INVOL REV — look for a valid GRANTED or REINSTATED record.
-
-  const candidates = authorityHistory
-
-    .filter(a => {
-
-      const s = (a.status ?? "").toUpperCase();
-
-      if (!s.includes("GRANTED") && !s.includes("REINSTATED")) return false;
-
-      const eff = dateOnly(a.effective_date);
-
-      return eff !== null && eff <= accidentDate;
-
-    })
-
-    .sort((a, b) => {
-
-      const da = dateOnly(a.effective_date) ?? "";
-
-      const db = dateOnly(b.effective_date) ?? "";
-
-      return db.localeCompare(da);
-
-    });
-
-
-
-  if (candidates.length === 0)
-
-    return {
-
-      status: "inactive",
-
-      basis: `No operating authority found with effective date on or before ${fmtDate(accidentDate)}.`,
-
-    };
-
-
-
-  const rec = candidates[0];
-
-  const rev = dateOnly(rec.revocation_date);
-
-  const authType = rec.authority_type ? `${rec.authority_type} authority` : "Authority";
-
-
-
-  if (rev && rev <= accidentDate) {
-
-    const yearsGap = parseInt(accidentDate.slice(0, 4)) - parseInt(rev.slice(0, 4));
-
-    const longGap = yearsGap >= 3 ? ` Note: authority lapsed ${yearsGap}+ years before accident date.` : "";
-
-    return {
-
-      status: "inactive",
-
-      basis: `${authType} effective ${fmtDate(rec.effective_date)}, revoked ${fmtDate(rec.revocation_date)}. No reinstatement found before ${fmtDate(accidentDate)}.${longGap}`,
-
-    };
-
-  }
-
-
-
-  const revClause = rev ? "" : ", no revocation before accident date";
-
-  return {
-
-    status: "active",
-
-    basis: `${authType} effective ${fmtDate(rec.effective_date)}${revClause}.`,
-
-  };
-
-}
-
 
 
 // ─── Props ───────────────────────────────────────────────────
@@ -3371,11 +2963,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
     carrier, sms, rejectedInsurance,
 
-    accidentDate: undefined,
-
-    accidentInsuranceStatus: null,
-
-    accidentAuthorityStatus: null,
 
   };
 
@@ -4153,37 +3740,11 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
                 const rejDate = dateOnly(r.rejected_date);
 
-                const proximityDays = accidentDate && rejDate
-
-                  ? (() => {
-
-                      const accMs = new Date(accidentDate + "T00:00:00Z").getTime();
-
-                      const rejMs = new Date(rejDate + "T00:00:00Z").getTime();
-
-                      const d = Math.round((accMs - rejMs) / (1000 * 60 * 60 * 24));
-
-                      return d >= 0 && d <= 90 ? d : null;
-
-                    })()
-
-                  : null;
-
                 return (
 
                   <div key={i} style={{ border: "1px solid #fecaca", borderRadius: "8px", overflow: "hidden" }}>
 
-                    {proximityDays !== null && (
-
-                      <div style={{ background: "#dc2626", color: "white", padding: "6px 14px", fontSize: "12px", fontWeight: 600 }}>
-
-                        🚨 CRITICAL: FMCSA rejected this insurance filing {proximityDays === 0 ? "on" : `${proximityDays} day${proximityDays !== 1 ? "s" : ""} before`} the accident date
-
-                      </div>
-
-                    )}
-
-                    <div style={{ padding: "14px 16px", background: proximityDays !== null ? "#fff5f5" : "#fafafa" }}>
+                    <div style={{ padding: "14px 16px", background: "#fafafa" }}>
 
                       <div style={{ marginBottom: "10px" }}>
 
@@ -4288,8 +3849,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
           oosOrders={oosOrders}
 
           rejectedInsurance={rejectedInsurance}
-
-          accidentDate={undefined}
 
         />
 

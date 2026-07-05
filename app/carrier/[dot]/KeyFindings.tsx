@@ -20,13 +20,12 @@ type Props = {
   authorityHistory: AuthorityRecord[];
   alerts: CarrierAlert[];
   oosOrders: OosOrder[];
-  accidentDate: string; // yyyy-mm-dd or ""
 };
 
 type Bullet = {
   text: string;
   color: "green" | "red" | "amber" | "grey";
-  priority: number; // lower = more important; used to sort when accidentDate is set
+  priority: number;
 };
 
 const COLOR_MAP: Record<Bullet["color"], string> = {
@@ -44,11 +43,6 @@ function parseDateStr(dateStr: string | undefined | null): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function subtractMonths(date: Date, months: number): Date {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() - months);
-  return d;
-}
 
 function yearsBetween(a: Date, b: Date): number {
   return Math.abs(b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
@@ -71,7 +65,6 @@ export default function KeyFindings({
   authorityHistory,
   alerts,
   oosOrders,
-  accidentDate,
 }: Props) {
   const bullets: Bullet[] = [];
 
@@ -84,9 +77,6 @@ export default function KeyFindings({
     !cargoUpper.includes("APPLYING FOR MC");
   const isForHire = !isPrivate;
   const isActive = (carrier.status ?? "").toUpperCase() === "ACTIVE";
-
-  const accDate = parseDateStr(accidentDate) ?? null;
-  const cutoff24 = accDate ? subtractMonths(accDate, 24) : null;
 
   // ── 1. Carrier status (priority 10) ───────────────────────
   bullets.push({
@@ -149,19 +139,8 @@ export default function KeyFindings({
   }
 
   // ── 5. Inspections (priority 3) ───────────────────────────
-  let inspectionCount: number;
-  let inspectionLabel: string;
-  if (accDate && cutoff24) {
-    inspectionCount = inspections.filter((insp) => {
-      const d = parseDateStr(insp.inspection_date);
-      if (!d) return false;
-      return d >= cutoff24 && d <= accDate;
-    }).length;
-    inspectionLabel = "within 24 months before accident";
-  } else {
-    inspectionCount = inspections.length;
-    inspectionLabel = "on record";
-  }
+  const inspectionCount = inspections.length;
+  const inspectionLabel = "on record";
   if (inspectionCount > 0) {
     bullets.push({
       text: `${inspectionCount} inspection${inspectionCount !== 1 ? "s" : ""} ${inspectionLabel}`,
@@ -171,14 +150,8 @@ export default function KeyFindings({
   }
 
   // ── 6. Violations + OOS combined (priority 4) ─────────────
-  // Filter to 24-month window when accidentDate is set (same scope as inspection count)
-  const inspInScope = accDate && cutoff24
-    ? inspections.filter(insp => {
-        const d = parseDateStr(insp.inspection_date);
-        return d !== null && d >= cutoff24 && d <= accDate;
-      })
-    : inspections;
-  const violLabel = accDate && cutoff24 ? " within 24 months before accident" : "";
+  const inspInScope = inspections;
+  const violLabel = "";
 
   const totalViolations = inspInScope.reduce(
     (sum, insp) => sum + (insp.total_violations ?? 0),
@@ -188,12 +161,7 @@ export default function KeyFindings({
     (sum, insp) => sum + (insp.oos_vehicles ?? 0),
     0,
   );
-  const oosInScope = accDate && cutoff24
-    ? oosOrders.filter(o => {
-        const d = parseDateStr(o.order_date);
-        return d !== null && d >= cutoff24 && d <= accDate;
-      })
-    : oosOrders;
+  const oosInScope = oosOrders;
   const oosTotal = oosFromInspections + oosInScope.length;
   if (totalViolations > 0 || oosTotal > 0) {
     const parts: string[] = [];
@@ -322,9 +290,7 @@ export default function KeyFindings({
   }
 
   // ── Sort + cap ────────────────────────────────────────────
-  const sorted = accDate
-    ? [...bullets].sort((a, b) => a.priority - b.priority).slice(0, 8)
-    : bullets.slice(0, 8);
+  const sorted = bullets.slice(0, 8);
 
   return (
     <div
