@@ -3072,7 +3072,6 @@ function ConflictFlag({ label }: { label: string }) {
 
 export default function CarrierDetailView({ carrier, sms, crashes, inspections, violations, insurance, authorityHistory, alerts, oosOrders, boc3, rejectedInsurance, suspectSuccessors }: Props) {
 
-  const [accidentDate, setAccidentDate] = useState("");
 
 
 
@@ -3179,13 +3178,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
 
 
-  const insuranceDerived  = accidentDate ? deriveInsuranceBasis(dedupedInsurance, accidentDate, carrier)  : null;
-
-  const authorityDerived  = accidentDate ? deriveAuthorityBasis(authorityHistory, accidentDate, carrier) : null;
-
-  const insuranceActiveAtDate = insuranceDerived?.status === "active";
-
-  const authorityActiveAtDate = authorityDerived?.status === "active";
 
 
 
@@ -3215,11 +3207,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
   }
 
-  const accidentInLapse = accidentDate
-
-    ? insuranceLapses.find(l => accidentDate >= l.from && accidentDate < l.to) ?? null
-
-    : null;
 
 
 
@@ -3273,33 +3260,6 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   const hasFleetConflict = dataConflicts.some(c => c.rule === "fleet_data_not_asymmetric");
   const hasInsDateConflict = dataConflicts.some(c => c.rule === "insurance_dates_internally_consistent");
 
-  // Bucket boundaries
-
-  let cutoff24     = "";
-
-  let cutoff24Minus1 = "";
-
-  let today        = "";
-
-  if (accidentDate) {
-
-    const accDt    = new Date(accidentDate + "T00:00:00Z");
-
-    const cutoffDt = new Date(accDt);
-
-    cutoffDt.setUTCMonth(cutoffDt.getUTCMonth() - 24);
-
-    cutoff24 = cutoffDt.toISOString().slice(0, 10);
-
-    const c24Dt = new Date(cutoff24 + "T00:00:00Z");
-
-    c24Dt.setUTCDate(c24Dt.getUTCDate() - 1);
-
-    cutoff24Minus1 = c24Dt.toISOString().slice(0, 10);
-
-    today = new Date().toISOString().slice(0, 10);
-
-  }
 
 
 
@@ -3311,59 +3271,33 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
   // Line 1 — Authority + insurance status
 
-  if (accidentDate && authorityDerived && insuranceDerived) {
+  const isPrivate = isLikelyPrivateCarrier(carrier);
 
-    const authStr =
+  if (isPrivate) {
 
-      authorityDerived.status === "active"         ? "operating authority was ACTIVE"
+    summaryLines.push("Private property carrier — FMCSA authority and insurance filing requirements may not apply.");
 
-      : authorityDerived.status === "not_required" ? "operating authority was NOT REQUIRED"
+  } else if (!hasAuthorityData) {
 
-      : "operating authority was INACTIVE";
-
-    const insStr =
-
-      insuranceDerived.status === "active"         ? "Bodily Injury & Property Damage (BI&PD) insurance was on file"
-
-      : insuranceDerived.status === "not_required" ? "insurance filing not required"
-
-      : insuranceDerived.status === "unknown"      ? "insurance status unverified from available records"
-
-      : "no active BI&PD (Bodily Injury & Property Damage) insurance was on file";
-
-    summaryLines.push(`As of ${fmtDate(accidentDate)}: ${authStr}; ${insStr}.`);
+    summaryLines.push("No FMCSA operating authority records found in imported data. Verify current status directly with FMCSA.");
 
   } else {
 
-    const isPrivate = isLikelyPrivateCarrier(carrier);
+    const authStatus = isCarrierActive ? "active" : "inactive";
 
-    if (isPrivate) {
+    const activeIns = dedupedInsurance.find(i =>
 
-      summaryLines.push("Private property carrier — FMCSA authority and insurance filing requirements may not apply.");
+      (i.policy_type === "91" || i.policy_type === "91X" || i.policy_type === "82") && !i.cancellation_date
 
-    } else if (!hasAuthorityData) {
+    );
 
-      summaryLines.push("No FMCSA operating authority records found in imported data. Verify current status directly with FMCSA.");
+    const insStr = activeIns
 
-    } else {
+      ? `Bodily Injury & Property Damage (BI&PD) insurance on file (${activeIns.insurer_name ?? "insurer on record"})`
 
-      const authStatus = isCarrierActive ? "active" : "inactive";
+      : "no active BI&PD (Bodily Injury & Property Damage) insurance policy found in imported records";
 
-      const activeIns = dedupedInsurance.find(i =>
-
-        (i.policy_type === "91" || i.policy_type === "91X" || i.policy_type === "82") && !i.cancellation_date
-
-      );
-
-      const insStr = activeIns
-
-        ? `Bodily Injury & Property Damage (BI&PD) insurance on file (${activeIns.insurer_name ?? "insurer on record"})`
-
-        : "no active BI&PD (Bodily Injury & Property Damage) insurance policy found in imported records";
-
-      summaryLines.push(`${carrier.legal_name} holds ${authStatus} FMCSA operating authority. ${insStr}.`);
-
-    }
+    summaryLines.push(`${carrier.legal_name} holds ${authStatus} FMCSA operating authority. ${insStr}.`);
 
   }
 
@@ -3373,33 +3307,13 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
   const totalFatalAll = cleanedCrashes.reduce((s, c) => s + (c.fatal ?? 0), 0);
 
-  if (accidentDate && cutoff24) {
+  if (cleanedCrashes.length > 0) {
 
-    const crashes24 = cleanedCrashes.filter(c => c.crash_date && c.crash_date >= cutoff24 && c.crash_date <= accidentDate);
-
-    const fatal24   = crashes24.filter(c => (c.fatal ?? 0) > 0).length;
-
-    if (crashes24.length > 0) {
-
-      summaryLines.push(`${crashes24.length} crash${crashes24.length !== 1 ? "es" : ""} in the 24 months prior to ${fmtDate(accidentDate)}${fatal24 > 0 ? `, including ${fatal24} fatal` : ""}.`);
-
-    } else {
-
-      summaryLines.push(`No crashes recorded in the 24 months prior to ${fmtDate(accidentDate)}.`);
-
-    }
+    summaryLines.push(`${cleanedCrashes.length} crash${cleanedCrashes.length !== 1 ? "es" : ""} in FMCSA records${totalFatalAll > 0 ? `, including ${totalFatalAll} fatal` : ""}.`);
 
   } else {
 
-    if (cleanedCrashes.length > 0) {
-
-      summaryLines.push(`${cleanedCrashes.length} crash${cleanedCrashes.length !== 1 ? "es" : ""} in FMCSA records${totalFatalAll > 0 ? `, including ${totalFatalAll} fatal` : ""}.`);
-
-    } else {
-
-      summaryLines.push("No crashes recorded in FMCSA history.");
-
-    }
+    summaryLines.push("No crashes recorded in FMCSA history.");
 
   }
 
@@ -3457,11 +3371,11 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
     carrier, sms, rejectedInsurance,
 
-    accidentDate: accidentDate || undefined,
+    accidentDate: undefined,
 
-    accidentInsuranceStatus: insuranceDerived?.status ?? null,
+    accidentInsuranceStatus: null,
 
-    accidentAuthorityStatus: authorityDerived?.status ?? null,
+    accidentAuthorityStatus: null,
 
   };
 
@@ -3481,12 +3395,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
   function renderValidationWarnings() {
     const flags: { level: "amber" | "red"; text: string }[] = [];
 
-    // 1. Authority ACTIVE + insurance INACTIVE/UNKNOWN
-    if (accidentDate && authorityDerived?.status === "active" && (insuranceDerived?.status === "inactive" || insuranceDerived?.status === "unknown")) {
-      flags.push({ level: "amber", text: "Authority active but no confirmed insurance on accident date — verify with FMCSA" });
-    }
-
-    // 2. Fleet 0/0 for active for-hire carrier
+    // 1. Fleet 0/0 for active for-hire carrier
     if (isForHire && isCarrierActive && (carrier.total_drivers ?? 0) === 0 && (carrier.total_trucks ?? 0) === 0) {
       flags.push({ level: "amber", text: "Fleet size shows 0 drivers and 0 trucks — unverified. Confirm with FMCSA." });
     }
@@ -3850,7 +3759,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
           <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: "14px", lineHeight: "1.5" }}>
 
-            This summary is generated from FMCSA public records and is a triage aid only. It is not a legal opinion or a complete risk assessment. Enter an accident date above for a date-specific analysis.
+            This summary is generated from FMCSA public records and is a triage aid only. It is not a legal opinion or a complete risk assessment.
 
           </p>
 
@@ -3858,257 +3767,19 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
 
 
-        {/* Section 2 — Accident Date Filter */}
-
-        <div style={{ background: "white", borderRadius: "12px", padding: "28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: "20px" }}>
-
-          <h2 style={{ fontSize: "15px", fontWeight: 600, color: "#0f172a", marginBottom: "16px" }}>Accident Date Filter</h2>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: "6px", maxWidth: "240px" }}>
-
-            <span style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "1px" }}>Enter Accident Date</span>
-
-            <input
-
-              type="date"
-
-              value={accidentDate}
-
-              onChange={e => setAccidentDate(e.target.value)}
-
-              style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "14px", fontFamily: "'DM Sans', sans-serif", color: "#0f172a" }}
-
-            />
-
-          </label>
-
-
-
-          <KeyFindings
-
-            carrier={carrier}
-
-            sms={sms}
-
-            crashes={cleanedCrashes}
-
-            inspections={inspections}
-
-            insurance={dedupedInsurance}
-
-            authorityHistory={authorityHistory}
-
-            alerts={alerts}
-
-            oosOrders={oosOrders}
-
-            accidentDate={accidentDate}
-
-          />
-
-
-
-          {accidentDate && insuranceDerived && authorityDerived && (
-
-            <>
-
-            <div style={{ display: "flex", gap: "16px", marginTop: "20px", flexWrap: "wrap" }}>
-
-              {/* Insurance status card */}
-
-              {(() => {
-
-                const s = insuranceDerived.status;
-
-                const bg  = s === "active" ? "#f0fdf4" : s === "not_required" ? "#f8fafc" : s === "unknown" ? "#fffbeb" : "#fef2f2";
-
-                const col = s === "active" ? "#22c55e" : s === "not_required" ? "#64748b" : s === "unknown" ? "#92400e" : "#ef4444";
-
-                const label = s === "active" ? "ACTIVE" : s === "not_required" ? "NOT REQUIRED" : s === "unknown" ? "VERIFY WITH FMCSA" : "INACTIVE";
-
-                return (
-
-                  <div style={{ background: bg, borderRadius: "8px", padding: "16px 20px", minWidth: "240px", maxWidth: "380px" }}>
-
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-
-                      Insurance Status on {fmtDate(accidentDate)}
-
-                    </p>
-
-                    <p style={{ fontSize: "20px", fontWeight: 700, color: col, marginBottom: "10px" }}>{label}</p>
-
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.4px" }}>Basis</p>
-
-                    <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}>{insuranceDerived.basis}</p>
-
-                  </div>
-
-                );
-
-              })()}
-
-              {/* Authority status card */}
-
-              {(() => {
-
-                const s = authorityDerived.status;
-
-                const bg  = s === "active" ? "#f0fdf4" : s === "not_required" ? "#f8fafc" : s === "unknown" ? "#fffbeb" : "#fef2f2";
-
-                const col = s === "active" ? "#22c55e" : s === "not_required" ? "#64748b" : s === "unknown" ? "#92400e" : "#ef4444";
-
-                const label = s === "active" ? "ACTIVE" : s === "not_required" ? "NOT REQUIRED" : s === "unknown" ? "VERIFY WITH FMCSA" : "INACTIVE";
-
-                return (
-
-                  <div style={{ background: bg, borderRadius: "8px", padding: "16px 20px", minWidth: "240px", maxWidth: "380px" }}>
-
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-
-                      Authority Status on {fmtDate(accidentDate)}
-
-                    </p>
-
-                    <p style={{ fontSize: "20px", fontWeight: 700, color: col, marginBottom: "10px" }}>{label}</p>
-
-                    <p style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginBottom: "3px", textTransform: "uppercase", letterSpacing: "0.4px" }}>Basis</p>
-
-                    <p style={{ fontSize: "12px", color: "#374151", lineHeight: "1.5" }}>{authorityDerived.basis}</p>
-
-                  </div>
-
-                );
-
-              })()}
-
-            </div>
-
-            {(insuranceDataGap || authorityDataGap) && (
-
-              <div style={{ marginTop: "16px", background: "#fffbeb", border: "1px solid #f59e0b", borderRadius: "8px", padding: "12px 16px" }}>
-
-                <p style={{ color: "#92400e", fontSize: "13px", margin: 0, lineHeight: "1.5" }}>
-
-                  <strong>⚠ Data Gap Warning:</strong>{" "}
-
-                  {insuranceDataGap && authorityDataGap
-
-                    ? `No insurance or authority records found in our database for MC#${carrier.mc_number}.`
-
-                    : insuranceDataGap
-
-                    ? `No insurance records found in our database for MC#${carrier.mc_number}.`
-
-                    : `No authority records found in our database for MC#${carrier.mc_number}.`}{" "}
-
-                  This may reflect an incomplete data import rather than confirmed absence of coverage. Verify directly with FMCSA SAFER before relying on this status.
-
-                </p>
-
-              </div>
-
-            )}
-
-            {authorityActiveAtDate && (insuranceDerived.status === "inactive" || insuranceDerived.status === "unknown") && (
-
-              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
-
-                <p style={{ fontSize: "12px", color: "#92400e", fontFamily: "'DM Mono', monospace" }}>
-
-                  ⚠ Contradiction detected: authority shows ACTIVE but insurance filing is {insuranceDerived.status === "unknown" ? "unverified" : "INACTIVE"} on this date. Cross-check directly with FMCSA before relying on either status.
-
-                </p>
-
-              </div>
-
-            )}
-
-            {accidentInLapse && (
-
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", marginTop: "12px" }}>
-
-                <p style={{ fontSize: "12px", color: "#991b1b", fontFamily: "'DM Mono', monospace" }}>
-
-                  ⚠ Insurance lapse detected: accident date falls within a {accidentInLapse.gapDays}-day gap in Bodily Injury & Property Damage (BI&PD) coverage ({fmtDate(accidentInLapse.from)} – {fmtDate(accidentInLapse.to)}). No active BI&PD policy found for this period in available records.
-
-                </p>
-
-              </div>
-
-            )}
-
-          </>
-
-          )}
-
-        </div>
-
-
-
         {/* Sections 3 / 4 / 5 */}
 
-        {!accidentDate ? (
-
-          <div style={{ background: "white", borderRadius: "12px", padding: "32px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", textAlign: "center" }}>
-
-            <p style={{ fontSize: "14px", color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-
-              Enter an accident date above to see records broken down by time period.
-
-            </p>
-
-          </div>
-
-        ) : (
-
-          <>
-
-            {/* Bucket 1 — within 24 months before accident (most critical for litigation) */}
+        <>
 
             <TimeBucketSection
 
-              label={`Within 24 Months Before ${fmtDate(accidentDate)}`}
+              label="Full History Timeline"
 
-              sub={`${fmtDate(cutoff24)} – ${fmtDate(accidentDate)}`}
-
-              highlight
-
-              bucketStart={cutoff24}
-
-              bucketEnd={accidentDate}
-
-              {...sharedProps}
-
-            />
-
-            {/* Bucket 2 — older history: more than 24 months before accident */}
-
-            <TimeBucketSection
-
-              label={`More Than 24 Months Before ${fmtDate(accidentDate)}`}
-
-              sub={`Before ${fmtDate(cutoff24)}`}
+              sub="All FMCSA records"
 
               bucketStart={null}
 
-              bucketEnd={cutoff24Minus1}
-
-              {...sharedProps}
-
-            />
-
-            {/* Bucket 3 — from accident date to today */}
-
-            <TimeBucketSection
-
-              label={`From ${fmtDate(accidentDate)} to Today`}
-
-              sub={`${fmtDate(accidentDate)} – Today`}
-
-              bucketStart={accidentDate}
-
-              bucketEnd={today}
+              bucketEnd={null}
 
               {...sharedProps}
 
@@ -4226,9 +3897,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
             )}
 
-          </>
-
-        )}
+        </>
 
 
 
@@ -4620,7 +4289,7 @@ export default function CarrierDetailView({ carrier, sms, crashes, inspections, 
 
           rejectedInsurance={rejectedInsurance}
 
-          accidentDate={accidentDate}
+          accidentDate={undefined}
 
         />
 
